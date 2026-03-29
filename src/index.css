@@ -2,60 +2,61 @@
 @tailwind components;
 @tailwind utilities;
 
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @layer base {
   :root {
-    --background: 215 28% 7%;
+    --background: 222 47% 5%;
     --foreground: 210 14% 93%;
 
-    --card: 215 22% 11%;
+    --card: 220 35% 8%;
     --card-foreground: 210 14% 93%;
 
-    --popover: 215 22% 11%;
+    --popover: 220 35% 8%;
     --popover-foreground: 210 14% 93%;
 
-    --primary: 212 100% 67%;
+    --primary: 212 100% 60%;
     --primary-foreground: 215 28% 7%;
 
-    --secondary: 215 14% 20%;
+    --secondary: 215 20% 14%;
     --secondary-foreground: 210 14% 93%;
 
-    --muted: 215 14% 20%;
-    --muted-foreground: 215 10% 55%;
+    --muted: 215 20% 14%;
+    --muted-foreground: 215 10% 50%;
 
-    --accent: 212 100% 67%;
+    --accent: 212 100% 60%;
     --accent-foreground: 215 28% 7%;
 
     --destructive: 2 88% 60%;
     --destructive-foreground: 210 14% 93%;
 
-    --border: 215 14% 25%;
-    --input: 215 14% 25%;
-    --ring: 212 100% 67%;
+    --border: 215 18% 18%;
+    --input: 215 18% 18%;
+    --ring: 212 100% 60%;
 
-    --radius: 0.5rem;
+    --radius: 0.6rem;
 
-    /* Severity colors */
     --severity-critical: 2 88% 60%;
-    --severity-high: 42 76% 57%;
-    --severity-medium: 140 60% 48%;
-    --severity-low: 215 10% 55%;
+    --severity-high: 38 92% 57%;
+    --severity-medium: 140 60% 45%;
+    --severity-low: 215 10% 50%;
 
-    /* Chart colors */
-    --chart-blue: 212 100% 67%;
+    --chart-blue: 212 100% 60%;
     --chart-red: 2 88% 60%;
-    --chart-yellow: 42 76% 57%;
-    --chart-green: 140 60% 48%;
-    --chart-gray: 215 10% 55%;
+    --chart-yellow: 38 92% 57%;
+    --chart-green: 140 60% 45%;
+    --chart-gray: 215 10% 50%;
   }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, sans-serif;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(56,139,253,0.06) 0%, transparent 60%);
   }
 }
 
@@ -63,31 +64,54 @@
   .font-mono-code {
     font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   }
+
+  /* Card with subtle top border glow */
+  .card-glow {
+    border-top: 1px solid rgba(56,139,253,0.25);
+    box-shadow: 0 1px 0 0 rgba(56,139,253,0.1) inset,
+                0 4px 24px rgba(0,0,0,0.3);
+  }
+
+  .card-glow-red {
+    border-top: 1px solid rgba(248,81,73,0.3);
+    box-shadow: 0 1px 0 0 rgba(248,81,73,0.1) inset,
+                0 4px 24px rgba(0,0,0,0.3);
+  }
+
+  .card-glow-green {
+    border-top: 1px solid rgba(63,185,80,0.3);
+    box-shadow: 0 1px 0 0 rgba(63,185,80,0.1) inset,
+                0 4px 24px rgba(0,0,0,0.3);
+  }
+
+  .card-glow-yellow {
+    border-top: 1px solid rgba(227,179,65,0.3);
+    box-shadow: 0 1px 0 0 rgba(227,179,65,0.1) inset,
+                0 4px 24px rgba(0,0,0,0.3);
+  }
 }
 
 @keyframes flash-new {
-  0% { background-color: rgba(227, 179, 65, 0.3); }
+  0%   { background-color: rgba(227,179,65,0.25); }
   100% { background-color: transparent; }
 }
 
 @keyframes slide-down {
-  from { opacity: 0; max-height: 0; transform: translateY(-10px); }
-  to { opacity: 1; max-height: 600px; transform: translateY(0); }
+  from { opacity: 0; max-height: 0; transform: translateY(-8px); }
+  to   { opacity: 1; max-height: 600px; transform: translateY(0); }
 }
 
 @keyframes pulse-number {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; color: hsl(212, 100%, 67%); }
+  50%       { opacity: 0.5; color: hsl(212,100%,60%); }
 }
 
-.animate-flash-new {
-  animation: flash-new 500ms ease-out forwards;
+@keyframes blink-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.2; }
 }
 
-.animate-slide-down {
-  animation: slide-down 300ms ease-out forwards;
-}
-
-.animate-pulse-number {
-  animation: pulse-number 400ms ease-out;
-}
+.animate-flash-new    { animation: flash-new 600ms ease-out forwards; }
+.animate-slide-down   { animation: slide-down 280ms ease-out forwards; }
+.animate-pulse-number { animation: pulse-number 400ms ease-out; }
+.animate-blink-dot    { animation: blink-dot 1.5s ease-in-out infinite; }
