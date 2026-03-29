@@ -10,26 +10,58 @@ interface Stats {
 }
 
 const formatUptime = (s: number) => {
-  const h = Math.floor(s / 3600).toString().padStart(2, "0");
-  const m = Math.floor((s % 3600) / 60).toString().padStart(2, "0");
+  const h   = Math.floor(s / 3600).toString().padStart(2, "0");
+  const m   = Math.floor((s % 3600) / 60).toString().padStart(2, "0");
   const sec = Math.floor(s % 60).toString().padStart(2, "0");
   return `${h}:${m}:${sec}`;
 };
 
+const CARD_STYLES = [
+  {
+    label: "Flows Analyzed",
+    icon: Activity,
+    accent: "#58a6ff",
+    bg: "rgba(56,139,253,0.07)",
+    border: "rgba(56,139,253,0.2)",
+    glow: "rgba(56,139,253,0.08)",
+  },
+  {
+    label: "Attacks Detected",
+    icon: AlertTriangle,
+    accent: "#f85149",
+    bg: "rgba(248,81,73,0.07)",
+    border: "rgba(248,81,73,0.2)",
+    glow: "rgba(248,81,73,0.08)",
+  },
+  {
+    label: "System Uptime",
+    icon: Clock,
+    accent: "#e3b341",
+    bg: "rgba(227,179,65,0.07)",
+    border: "rgba(227,179,65,0.2)",
+    glow: "rgba(227,179,65,0.08)",
+  },
+  {
+    label: "Benign Traffic",
+    icon: Shield,
+    accent: "#3fb950",
+    bg: "rgba(63,185,80,0.07)",
+    border: "rgba(63,185,80,0.2)",
+    glow: "rgba(63,185,80,0.08)",
+  },
+];
+
 const KPICards = () => {
-  const [stats, setStats] = useState<Stats | null>(null);
+  const [stats, setStats]   = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [flash, setFlash] = useState(false);
-  const prevRef = useRef<Stats | null>(null);
+  const [flash, setFlash]   = useState(false);
+  const prevRef             = useRef<Stats | null>(null);
 
   useEffect(() => {
-    const fetch = () => {
+    const fetchData = () => {
       getStats()
         .then((data) => {
-          if (
-            prevRef.current &&
-            JSON.stringify(data) !== JSON.stringify(prevRef.current)
-          ) {
+          if (prevRef.current && JSON.stringify(data) !== JSON.stringify(prevRef.current)) {
             setFlash(true);
             setTimeout(() => setFlash(false), 400);
           }
@@ -39,46 +71,71 @@ const KPICards = () => {
         })
         .catch(() => setLoading(false));
     };
-    fetch();
-    const id = setInterval(fetch, 10000);
+    fetchData();
+    const id = setInterval(fetchData, 10000);
     return () => clearInterval(id);
   }, []);
 
-  const cards = stats
+  const values = stats
     ? [
-        { label: "Flows Analyzed", value: stats.total_flows.toLocaleString(), icon: Activity, color: "text-primary" },
-        { label: "Attacks Detected", value: stats.total_attacks.toLocaleString(), icon: AlertTriangle, color: "text-severity-critical" },
-        { label: "System Uptime", value: formatUptime(stats.uptime_seconds), icon: Clock, color: "text-severity-high" },
-        { label: "Benign Traffic", value: stats.benign_count.toLocaleString(), icon: Shield, color: "text-severity-medium" },
+        stats.total_flows.toLocaleString(),
+        stats.total_attacks.toLocaleString(),
+        formatUptime(stats.uptime_seconds),
+        stats.benign_count.toLocaleString(),
       ]
-    : [];
+    : ["—", "—", "—:—:—", "—"];
 
   if (loading) {
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[...Array(4)].map((_, i) => (
-          <div key={i} className="bg-card border border-border rounded-lg p-4 animate-pulse h-24" />
+          <div key={i} className="rounded-xl border animate-pulse h-24"
+            style={{ background: "rgba(255,255,255,0.03)", borderColor: "rgba(255,255,255,0.06)" }} />
         ))}
       </div>
     );
   }
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-      {cards.map((c) => (
-        <div
-          key={c.label}
-          className="bg-card border border-border rounded-lg p-4 flex items-center gap-3"
-        >
-          <c.icon className={`w-8 h-8 ${c.color} shrink-0`} />
-          <div>
-            <div className={`text-2xl font-bold text-foreground ${flash ? "animate-pulse-number" : ""}`}>
-              {c.value}
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {CARD_STYLES.map((c, i) => {
+        const Icon = c.icon;
+        return (
+          <div
+            key={c.label}
+            className="rounded-xl border p-4 flex items-center gap-3 transition-all duration-200 hover:scale-[1.02]"
+            style={{
+              background: c.bg,
+              borderColor: c.border,
+              boxShadow: `0 0 20px ${c.glow}, 0 4px 16px rgba(0,0,0,0.2)`,
+            }}
+          >
+            {/* Icon box */}
+            <div
+              className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+              style={{
+                background: `${c.accent}18`,
+                border: `1px solid ${c.accent}35`,
+              }}
+            >
+              <Icon size={18} style={{ color: c.accent }} />
             </div>
-            <div className="text-xs text-muted-foreground">{c.label}</div>
+
+            {/* Text */}
+            <div className="min-w-0">
+              <div
+                className={`text-2xl font-bold leading-none mb-1 ${flash ? "animate-pulse-number" : ""}`}
+                style={{ color: "#e6edf3" }}
+              >
+                {values[i]}
+              </div>
+              <div className="text-[11px] font-medium truncate" style={{ color: "rgba(255,255,255,0.35)" }}>
+                {c.label}
+              </div>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 };
