@@ -1,29 +1,45 @@
+/**
+ * useWebSocket.ts — WebSocket hook (FIXED)
+ * Fix: Alert type now has shap_top5 with both 'value' and 'impact' optional fields
+ * to handle both old and new backend format gracefully.
+ */
+
 import { useState, useEffect, useRef, useCallback } from "react";
 
+export interface SHAPEntry {
+  feature: string;
+  value?:  number;    // new backend format
+  impact?: number;    // legacy format — both handled by SHAPExplainer
+}
+
 export interface Alert {
-  id?: string;
-  timestamp: string;
-  src_ip: string;
-  source_ip?: string;         // backend sends source_ip
-  attack_type?: string;       // frontend alias
-  prediction?: string;        // backend sends prediction
-  severity: string;
-  confidence: number;
-  shap_top5?: { feature: string; impact: number }[];
+  id?:          string;
+  timestamp:    string;
+  src_ip:       string;
+  source_ip?:   string;
+  attack_type?: string;
+  prediction?:  string;
+  severity:     string;
+  confidence:   number;
+  shap_top5?:   SHAPEntry[];
   [key: string]: unknown;
 }
 
-// Helper: normalize alert from backend format → frontend format
+// Normalize alert from backend format → frontend format
 function normalizeAlert(raw: Record<string, unknown>): Alert {
   return {
     ...raw,
-    // backend sends source_ip, frontend uses src_ip
     src_ip:      (raw.src_ip as string)      || (raw.source_ip as string) || "unknown",
-    // backend sends prediction, frontend uses attack_type
     attack_type: (raw.attack_type as string) || (raw.prediction as string) || "Unknown",
     severity:    (raw.severity as string)    || "LOW",
     confidence:  (raw.confidence as number)  || 0,
     timestamp:   (raw.timestamp as string)   || new Date().toISOString(),
+    // Normalize SHAP data — handle both field names
+    shap_top5: ((raw.shap_top5 as any[]) || []).map((s: any) => ({
+      feature: s.feature,
+      value:   s.value ?? s.impact ?? 0,
+      impact:  s.value ?? s.impact ?? 0,  // keep both for compat
+    })),
   } as Alert;
 }
 
@@ -48,7 +64,9 @@ export function useWebSocket(url = "ws://localhost:8000/ws/live") {
         try {
           const raw = JSON.parse(event.data);
 
-          // Backend sends either a single alert or an array (initial load)
+          // Ignore ping messages
+          if (raw?.type === "ping") return;
+
           if (Array.isArray(raw)) {
             const normalized = raw.map(normalizeAlert);
             setAlertHistory(normalized.slice(0, 100));

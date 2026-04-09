@@ -1,3 +1,8 @@
+/**
+ * StatusBar.tsx — Top header bar (Stitch design)
+ * Shows: brand name, system status pill, live clock
+ */
+
 import { useState, useEffect } from "react";
 import { checkHealth } from "@/api/client";
 
@@ -25,72 +30,90 @@ const StatusBar = ({ wsConnected }: StatusBarProps) => {
 
   return (
     <header
-      className="h-14 flex items-center justify-between px-5 sticky top-0 z-50"
+      className="sticky top-0 z-50 flex items-center justify-between px-8 py-4"
       style={{
-        background: "rgba(10,12,20,0.92)",
-        backdropFilter: "blur(12px)",
-        borderBottom: "1px solid rgba(56,139,253,0.12)",
-        boxShadow: "0 1px 0 0 rgba(56,139,253,0.06)",
+        background: "rgba(10,14,25,0.92)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        borderBottom: "1px solid rgba(255,255,255,0.05)",
+        boxShadow: "0 0 20px rgba(0,245,255,0.04)",
       }}
     >
-      {/* Left — Logo */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">
-          {/* Small shield icon accent */}
-          <div
-            className="w-7 h-7 rounded-md flex items-center justify-center text-xs font-bold"
-            style={{
-              background: "linear-gradient(135deg, rgba(56,139,253,0.25), rgba(56,139,253,0.08))",
-              border: "1px solid rgba(56,139,253,0.3)",
-              color: "#58a6ff",
-            }}
+      {/* Left — title + status pill */}
+      <div className="flex items-center gap-6">
+        {/* Brand (hidden on large screens where sidebar is shown) */}
+        <span
+          className="lg:hidden font-bold text-xl"
+          style={{
+            color: "#a1faff",
+            fontFamily: "'Space Grotesk', sans-serif",
+            letterSpacing: "-0.02em",
+          }}
+        >
+          The Sentinel
+        </span>
+
+        {/* Page title on large screens */}
+        <span
+          className="hidden lg:block font-bold text-lg"
+          style={{
+            color: "rgba(255,255,255,0.5)",
+            fontFamily: "'Space Grotesk', sans-serif",
+          }}
+        >
+          Dashboard
+        </span>
+
+        {/* System active pill */}
+        <div
+          className="flex items-center gap-2 px-3 py-1 rounded-full"
+          style={{
+            background: online ? "rgba(161,250,255,0.08)" : "rgba(248,81,73,0.08)",
+            border: `1px solid ${online ? "rgba(161,250,255,0.2)" : "rgba(248,81,73,0.2)"}`,
+          }}
+        >
+          <span
+            className={`w-2 h-2 rounded-full ${online ? "animate-blink-dot" : ""}`}
+            style={{ backgroundColor: online ? "#a1faff" : "#f85149" }}
+          />
+          <span
+            className="text-[10px] font-bold uppercase tracking-widest"
+            style={{ color: online ? "#a1faff" : "#f85149" }}
           >
-            ⬡
-          </div>
-          <span className="font-bold text-lg tracking-tight" style={{ color: "#58a6ff" }}>
-            NIDS
+            {online ? "System Active" : "Offline"}
           </span>
         </div>
-        <div
-          className="hidden sm:block h-4 w-px"
-          style={{ background: "rgba(255,255,255,0.1)" }}
-        />
-        <span className="hidden sm:inline text-sm" style={{ color: "rgba(255,255,255,0.35)" }}>
-          Network Intrusion Detection System
-        </span>
-      </div>
 
-      {/* Right — Status indicators */}
-      <div className="flex items-center gap-5">
         {/* WS reconnecting */}
         {!wsConnected && (
           <span
             className="text-xs flex items-center gap-1.5 animate-pulse"
             style={{ color: "#e3b341" }}
           >
-            <span>⚡</span> Reconnecting...
+            ⚡ Reconnecting...
           </span>
         )}
+      </div>
 
-        {/* System status */}
-        <div className="flex items-center gap-2">
+      {/* Right — clock */}
+      <div className="flex items-center gap-6">
+        <div className="hidden xl:flex flex-col items-end">
+          <span className="text-[10px] uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>
+            Local Time
+          </span>
           <span
-            className={`w-2 h-2 rounded-full ${online ? "animate-blink-dot" : ""}`}
-            style={{ backgroundColor: online ? "#3fb950" : "#f85149" }}
-          />
-          <span
-            className="text-xs font-semibold tracking-wide"
-            style={{ color: online ? "#3fb950" : "#f85149" }}
+            className="text-sm font-bold font-mono-code"
+            style={{ color: "#a1faff" }}
           >
-            {online ? "SYSTEM ACTIVE" : "OFFLINE"}
+            {time.toLocaleTimeString("en-US", { hour12: false })} UTC
           </span>
         </div>
 
-        {/* Divider */}
-        <div className="h-4 w-px" style={{ background: "rgba(255,255,255,0.08)" }} />
-
-        {/* Clock */}
-        <span className="font-mono-code text-xs" style={{ color: "rgba(255,255,255,0.35)" }}>
+        {/* Mobile clock */}
+        <span
+          className="xl:hidden font-mono-code text-xs"
+          style={{ color: "rgba(255,255,255,0.35)" }}
+        >
           {time.toLocaleTimeString()}
         </span>
       </div>

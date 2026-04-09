@@ -1,32 +1,57 @@
+/**
+ * AlertFeed.tsx — Live Threat Log (Stitch design)
+ * Stitch styling: glass panel, sticky header, severity pill colors
+ * NO changes to data logic, WebSocket, or state.
+ */
+
 import { useState, useEffect, useRef } from "react";
 import type { Alert } from "@/hooks/useWebSocket";
 import SHAPExplainer from "./SHAPExplainer";
+import { ChevronRight } from "lucide-react";
 
 interface Props {
   alertHistory: Alert[];
 }
 
-const SEV_COLOR: Record<string, string> = {
-  CRITICAL: "#f85149",
-  HIGH:     "#e3b341",
-  MEDIUM:   "#3fb950",
-  LOW:      "#8b949e",
-  NONE:     "#8b949e",
-};
-
-const SEV_BG: Record<string, string> = {
-  CRITICAL: "rgba(248,81,73,0.08)",
-  HIGH:     "rgba(227,179,65,0.08)",
-  MEDIUM:   "rgba(63,185,80,0.08)",
-  LOW:      "rgba(139,148,158,0.05)",
-  NONE:     "transparent",
+// Stitch design severity colors
+const SEV_STYLES: Record<string, { color: string; bg: string; border: string; label: string }> = {
+  CRITICAL: {
+    color:  "#ff716c",
+    bg:     "rgba(255,113,108,0.12)",
+    border: "rgba(255,113,108,0.25)",
+    label:  "Critical",
+  },
+  HIGH: {
+    color:  "#699cff",
+    bg:     "rgba(0,90,194,0.2)",
+    border: "rgba(105,156,255,0.25)",
+    label:  "High",
+  },
+  MEDIUM: {
+    color:  "#ac8aff",
+    bg:     "rgba(143,96,250,0.12)",
+    border: "rgba(172,138,255,0.2)",
+    label:  "Medium",
+  },
+  LOW: {
+    color:  "rgba(255,255,255,0.4)",
+    bg:     "rgba(255,255,255,0.05)",
+    border: "rgba(255,255,255,0.1)",
+    label:  "Low",
+  },
+  NONE: {
+    color:  "rgba(255,255,255,0.25)",
+    bg:     "rgba(255,255,255,0.03)",
+    border: "rgba(255,255,255,0.06)",
+    label:  "None",
+  },
 };
 
 const AlertFeed = ({ alertHistory }: Props) => {
   const [selected, setSelected] = useState<Alert | null>(null);
-  const [newIds, setNewIds]      = useState<Set<string>>(new Set());
-  const prevLenRef               = useRef(0);
-  const alerts                   = alertHistory.slice(0, 50);
+  const [newIds, setNewIds]     = useState<Set<string>>(new Set());
+  const prevLenRef              = useRef(0);
+  const alerts                  = alertHistory.slice(0, 50);
 
   useEffect(() => {
     if (alertHistory.length > prevLenRef.current) {
@@ -41,64 +66,90 @@ const AlertFeed = ({ alertHistory }: Props) => {
 
   return (
     <div
-      className="rounded-xl border flex flex-col h-full"
+      className="rounded-2xl border flex flex-col h-full overflow-hidden"
       style={{
-        background: "rgba(15,18,30,0.7)",
-        borderColor: "rgba(56,139,253,0.12)",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.25)",
+        background:  "rgba(26,31,46,0.6)",
+        backdropFilter: "blur(12px)",
+        borderColor: "rgba(255,255,255,0.06)",
+        boxShadow:   "0 4px 24px rgba(0,0,0,0.3)",
       }}
     >
       {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-3 shrink-0"
-        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}
+        className="flex items-center justify-between px-8 py-5 shrink-0"
+        style={{ borderBottom: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.03)" }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
           <span
             className="w-2 h-2 rounded-full animate-blink-dot"
-            style={{ backgroundColor: alerts.length > 0 ? "#f85149" : "#3fb950" }}
+            style={{ backgroundColor: alerts.length > 0 ? "#ff716c" : "#a1faff" }}
           />
-          <span className="text-sm font-semibold" style={{ color: "#e6edf3" }}>
-            Live Alert Feed
-          </span>
-        </div>
-        {alerts.length > 0 && (
           <span
-            className="text-[10px] font-mono-code px-2 py-0.5 rounded-full"
-            style={{
-              background: "rgba(248,81,73,0.12)",
-              color: "#f85149",
-              border: "1px solid rgba(248,81,73,0.2)",
-            }}
+            className="text-lg font-bold"
+            style={{ color: "#e8eafb", fontFamily: "'Space Grotesk', sans-serif" }}
           >
-            {alerts.length} alerts
+            Live Threat Log
           </span>
-        )}
+          {alerts.length > 0 && (
+            <span
+              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{
+                background: "rgba(255,113,108,0.12)",
+                color:      "#ff716c",
+                border:     "1px solid rgba(255,113,108,0.2)",
+              }}
+            >
+              {alerts.length} alerts
+            </span>
+          )}
+        </div>
+        <button
+          className="text-xs font-bold transition-colors hover:underline"
+          style={{ color: "#a1faff" }}
+        >
+          View Historical Archive
+        </button>
       </div>
 
       {/* Body */}
       {alerts.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2"
+        <div className="flex-1 flex flex-col items-center justify-center gap-3"
           style={{ color: "rgba(255,255,255,0.2)" }}>
-          <span className="text-2xl">🛡️</span>
-          <span className="text-sm">No alerts yet</span>
+          <span className="text-3xl">🛡️</span>
+          <span className="text-sm">No threats detected</span>
         </div>
       ) : (
-        <div className="overflow-auto flex-1" style={{ maxHeight: 420 }}>
-          <table className="w-full text-xs border-collapse">
-            <thead className="sticky top-0" style={{ background: "rgba(10,12,20,0.95)" }}>
-              <tr style={{ color: "rgba(255,255,255,0.3)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                {["Time", "Source IP", "Attack", "Severity", "Conf"].map(h => (
-                  <th key={h} className="text-left py-2 px-3 font-medium text-[11px]">{h}</th>
+        <div className="overflow-auto flex-1">
+          <table className="w-full text-left border-collapse">
+            <thead
+              className="sticky top-0 z-10"
+              style={{ background: "rgba(26,31,46,0.98)" }}
+            >
+              <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                {["Timestamp", "Source IP", "Attack Type", "Severity", "Action"].map((h, idx) => (
+                  <th
+                    key={h}
+                    className="py-4 text-[10px] font-bold uppercase tracking-widest"
+                    style={{
+                      color:   "rgba(255,255,255,0.3)",
+                      paddingLeft:  idx === 0 ? "2rem" : "1rem",
+                      paddingRight: idx === 4 ? "2rem" : "1rem",
+                      textAlign: idx === 4 ? "right" : "left",
+                    }}
+                  >
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {alerts.map((alert, i) => {
-                const sev   = (alert.severity || "LOW").toUpperCase();
-                const id    = alert.timestamp + alert.src_ip;
-                const isNew = newIds.has(id);
+                const sev       = (alert.severity || "LOW").toUpperCase();
+                const style     = SEV_STYLES[sev] || SEV_STYLES.LOW;
+                const id        = alert.timestamp + alert.src_ip;
+                const isNew     = newIds.has(id);
                 const isSelected = selected === alert;
+
                 return (
                   <>
                     <tr
@@ -106,56 +157,62 @@ const AlertFeed = ({ alertHistory }: Props) => {
                       onClick={() => setSelected(isSelected ? null : alert)}
                       className={`cursor-pointer transition-all duration-150 ${isNew ? "animate-flash-new" : ""}`}
                       style={{
-                        backgroundColor: isSelected
-                          ? `${SEV_COLOR[sev]}22`
-                          : isNew ? undefined : SEV_BG[sev],
-                        borderLeft: isSelected ? `2px solid ${SEV_COLOR[sev]}` : "2px solid transparent",
+                        background:  isSelected
+                          ? `${style.color}14`
+                          : i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)",
+                        borderLeft:  isSelected
+                          ? `2px solid ${style.color}`
+                          : "2px solid transparent",
+                      }}
+                      onMouseEnter={e => {
+                        if (!isSelected)
+                          (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+                      }}
+                      onMouseLeave={e => {
+                        if (!isSelected)
+                          (e.currentTarget as HTMLElement).style.background =
+                            i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.015)";
                       }}
                     >
-                      <td className="py-2 px-3 font-mono-code" style={{ color: "rgba(255,255,255,0.35)" }}>
+                      <td
+                        className="py-4 font-mono-code text-xs"
+                        style={{ color: "rgba(255,255,255,0.35)", paddingLeft: "2rem" }}
+                      >
                         {new Date(alert.timestamp).toLocaleTimeString()}
                       </td>
-                      <td className="py-2 px-3 font-mono-code" style={{ color: "#e6edf3" }}>
+                      <td className="py-4 px-4 font-mono-code text-sm" style={{ color: "#a1faff" }}>
                         {alert.src_ip}
                       </td>
-                      <td className="py-2 px-3 font-medium" style={{ color: "#e6edf3" }}>
+                      <td className="py-4 px-4 text-sm font-medium" style={{ color: "#e8eafb" }}>
                         {alert.attack_type}
                       </td>
-                      <td className="py-2 px-3">
+                      <td className="py-4 px-4">
                         <span
-                          className="px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wide"
+                          className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase"
                           style={{
-                            backgroundColor: `${SEV_COLOR[sev]}18`,
-                            color: SEV_COLOR[sev],
-                            border: `1px solid ${SEV_COLOR[sev]}35`,
+                            background: style.bg,
+                            color:      style.color,
+                            border:     `1px solid ${style.border}`,
                           }}
                         >
-                          {sev}
+                          {style.label}
                         </span>
                       </td>
-                      <td className="py-2 px-3">
-                        <div className="flex items-center gap-1.5">
-                          <div
-                            className="w-10 h-1 rounded-full overflow-hidden"
-                            style={{ background: "rgba(255,255,255,0.08)" }}
-                          >
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${alert.confidence * 100}%`,
-                                backgroundColor: SEV_COLOR[sev],
-                              }}
-                            />
-                          </div>
-                          <span style={{ color: "rgba(255,255,255,0.4)" }}>
-                            {(alert.confidence * 100).toFixed(0)}%
-                          </span>
-                        </div>
+                      <td className="py-4 text-right" style={{ paddingRight: "2rem" }}>
+                        <button
+                          className="flex items-center gap-1 text-xs font-bold ml-auto transition-colors"
+                          style={{ color: "#a1faff" }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "#fff"; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "#a1faff"; }}
+                        >
+                          SHAP Explain
+                          <ChevronRight size={14} />
+                        </button>
                       </td>
                     </tr>
                     {isSelected && (
                       <tr key={`shap-${i}`}>
-                        <td colSpan={5} className="px-3 pb-2">
+                        <td colSpan={5} className="px-8 pb-3">
                           <SHAPExplainer alert={alert} onClose={() => setSelected(null)} />
                         </td>
                       </tr>

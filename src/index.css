@@ -2,50 +2,47 @@
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
+/* ── Stitch Design System Tokens ────────────────────────────── */
 @layer base {
   :root {
-    --background: 222 47% 5%;
-    --foreground: 210 14% 93%;
+    /* Stitch palette */
+    --surface-dim:       #0a0e19;
+    --surface:           #0a0e19;
+    --surface-container: #141927;
+    --surface-bright:    #262c3d;
 
-    --card: 220 35% 8%;
+    --primary:    #a1faff;
+    --secondary:  #699cff;
+    --tertiary:   #ac8aff;
+    --error:      #ff716c;
+
+    --on-surface:         #e8eafb;
+    --on-surface-variant: rgba(255,255,255,0.4);
+    --outline-variant:    rgba(255,255,255,0.06);
+
+    /* Shadcn/Radix compat */
+    --background: 220 47% 5%;
+    --foreground:  210 14% 93%;
+    --card:        220 35% 8%;
     --card-foreground: 210 14% 93%;
-
-    --popover: 220 35% 8%;
+    --popover:     220 35% 8%;
     --popover-foreground: 210 14% 93%;
-
-    --primary: 212 100% 60%;
+    --primary-shadcn: 212 100% 60%;
     --primary-foreground: 215 28% 7%;
-
-    --secondary: 215 20% 14%;
+    --secondary-shadcn: 215 20% 14%;
     --secondary-foreground: 210 14% 93%;
-
-    --muted: 215 20% 14%;
+    --muted:       215 20% 14%;
     --muted-foreground: 215 10% 50%;
-
-    --accent: 212 100% 60%;
+    --accent:      212 100% 60%;
     --accent-foreground: 215 28% 7%;
-
     --destructive: 2 88% 60%;
     --destructive-foreground: 210 14% 93%;
-
-    --border: 215 18% 18%;
-    --input: 215 18% 18%;
-    --ring: 212 100% 60%;
-
-    --radius: 0.6rem;
-
-    --severity-critical: 2 88% 60%;
-    --severity-high: 38 92% 57%;
-    --severity-medium: 140 60% 45%;
-    --severity-low: 215 10% 50%;
-
-    --chart-blue: 212 100% 60%;
-    --chart-red: 2 88% 60%;
-    --chart-yellow: 38 92% 57%;
-    --chart-green: 140 60% 45%;
-    --chart-gray: 215 10% 50%;
+    --border:      215 18% 18%;
+    --input:       215 18% 18%;
+    --ring:        212 100% 60%;
+    --radius:      0.6rem;
   }
 }
 
@@ -55,63 +52,66 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-family: 'Inter', system-ui, sans-serif;
+    background-color: #0a0e19;
     background-image:
-      radial-gradient(ellipse 80% 50% at 50% -20%, rgba(56,139,253,0.06) 0%, transparent 60%);
+      /* cyber grid */
+      linear-gradient(rgba(161, 250, 255, 0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(161, 250, 255, 0.025) 1px, transparent 1px),
+      /* ambient glow top */
+      radial-gradient(ellipse 60% 40% at 30% 0%, rgba(161,250,255,0.04) 0%, transparent 60%),
+      /* ambient glow bottom */
+      radial-gradient(ellipse 80% 50% at 70% 100%, rgba(172,138,255,0.04) 0%, transparent 60%);
+    background-size: 40px 40px, 40px 40px, 100% 100%, 100% 100%;
+    min-height: 100vh;
   }
 }
 
+/* ── Utility classes ─────────────────────────────────────────── */
 @layer utilities {
   .font-mono-code {
     font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
   }
 
-  /* Card with subtle top border glow */
-  .card-glow {
-    border-top: 1px solid rgba(56,139,253,0.25);
-    box-shadow: 0 1px 0 0 rgba(56,139,253,0.1) inset,
-                0 4px 24px rgba(0,0,0,0.3);
+  .font-headline {
+    font-family: 'Space Grotesk', sans-serif;
   }
 
-  .card-glow-red {
-    border-top: 1px solid rgba(248,81,73,0.3);
-    box-shadow: 0 1px 0 0 rgba(248,81,73,0.1) inset,
-                0 4px 24px rgba(0,0,0,0.3);
-  }
-
-  .card-glow-green {
-    border-top: 1px solid rgba(63,185,80,0.3);
-    box-shadow: 0 1px 0 0 rgba(63,185,80,0.1) inset,
-                0 4px 24px rgba(0,0,0,0.3);
-  }
-
-  .card-glow-yellow {
-    border-top: 1px solid rgba(227,179,65,0.3);
-    box-shadow: 0 1px 0 0 rgba(227,179,65,0.1) inset,
-                0 4px 24px rgba(0,0,0,0.3);
+  /* Glass panel (Stitch glass-panel class) */
+  .glass-panel {
+    background: rgba(26, 31, 46, 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
   }
 }
 
+/* ── Custom scrollbar (Stitch style) ─────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+
+/* ── Animations ──────────────────────────────────────────────── */
 @keyframes flash-new {
-  0%   { background-color: rgba(227,179,65,0.25); }
+  0%   { background-color: rgba(227,179,65,0.2); }
   100% { background-color: transparent; }
 }
 
 @keyframes slide-down {
-  from { opacity: 0; max-height: 0; transform: translateY(-8px); }
+  from { opacity: 0; max-height: 0;   transform: translateY(-8px); }
   to   { opacity: 1; max-height: 600px; transform: translateY(0); }
 }
 
 @keyframes pulse-number {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.5; color: hsl(212,100%,60%); }
+  50%       { opacity: 0.5; color: #a1faff; }
 }
 
 @keyframes blink-dot {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.2; }
+  50%       { opacity: 0.15; }
 }
 
 .animate-flash-new    { animation: flash-new 600ms ease-out forwards; }
-.animate-slide-down   { animation: slide-down 280ms ease-out forwards; }
+.animate-slide-down   { animation: slide-down 280ms ease-out forwards; overflow: hidden; }
 .animate-pulse-number { animation: pulse-number 400ms ease-out; }
 .animate-blink-dot    { animation: blink-dot 1.5s ease-in-out infinite; }

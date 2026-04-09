@@ -1,32 +1,29 @@
+/**
+ * AttackTimeline.tsx — 24-Hour Threat Trajectory (Stitch design)
+ * Stitch: horizontal bar chart, severity-colored bars, hour labels
+ * NO changes to data polling or computation logic.
+ */
+
 import { useState, useEffect, useMemo } from "react";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import { getAlerts } from "@/api/client";
 
 const SEVERITY_COLORS: Record<string, string> = {
-  CRITICAL: "#f85149",
-  HIGH: "#e3b341",
-  MEDIUM: "#3fb950",
-  LOW: "#8b949e",
+  CRITICAL: "#ff716c",
+  HIGH:     "#699cff",
+  MEDIUM:   "#ac8aff",
+  LOW:      "rgba(255,255,255,0.2)",
 };
 
 const SEVERITY_RANK: Record<string, number> = {
-  CRITICAL: 4,
-  HIGH: 3,
-  MEDIUM: 2,
-  LOW: 1,
+  CRITICAL: 4, HIGH: 3, MEDIUM: 2, LOW: 1,
 };
 
 const AttackTimeline = () => {
-  const [alerts, setAlerts] = useState<any[]>([]);
+  const [alerts, setAlerts]   = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -64,20 +61,81 @@ const AttackTimeline = () => {
   }, [alerts]);
 
   return (
-    <div className="bg-card border border-border rounded-lg p-4 h-full">
-      <h3 className="text-sm font-semibold text-foreground mb-3">Attack Timeline (Last 12 Hours)</h3>
+    <div
+      className="rounded-2xl p-8"
+      style={{
+        background:   "rgba(26,31,46,0.6)",
+        backdropFilter: "blur(12px)",
+        border:       "1px solid rgba(255,255,255,0.06)",
+        boxShadow:    "0 4px 24px rgba(0,0,0,0.3)",
+      }}
+    >
+      {/* Header */}
+      <div className="flex items-start justify-between mb-8">
+        <div>
+          <h2
+            className="text-xl font-bold"
+            style={{ color: "#e8eafb", fontFamily: "'Space Grotesk', sans-serif" }}
+          >
+            24-Hour Threat Trajectory
+          </h2>
+          <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>
+            Detected attack attempts categorized by hourly clusters
+          </p>
+        </div>
+
+        {/* Legend */}
+        <div className="flex items-center gap-4">
+          {[
+            { color: "#a1faff", label: "Benign Flow" },
+            { color: "#ff716c", label: "Intrusion" },
+          ].map(({ color, label }) => (
+            <div key={label} className="flex items-center gap-2">
+              <div className="w-3 h-3 rounded-sm" style={{ background: color }} />
+              <span className="text-[10px] font-bold uppercase tracking-widest"
+                style={{ color: "rgba(255,255,255,0.4)" }}>
+                {label}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Chart */}
       {loading ? (
-        <div className="h-48 animate-pulse bg-secondary rounded" />
+        <div className="h-52 rounded-xl animate-pulse" style={{ background: "rgba(255,255,255,0.04)" }} />
       ) : (
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={data}>
-            <CartesianGrid strokeDasharray="3 3" stroke="#30363d" />
-            <XAxis dataKey="hour" tick={{ fill: "#8b949e", fontSize: 10 }} />
-            <YAxis tick={{ fill: "#8b949e", fontSize: 10 }} />
-            <Tooltip contentStyle={{ backgroundColor: "#161b22", border: "1px solid #30363d", color: "#fff" }} />
-            <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+          <BarChart data={data} barCategoryGap="20%">
+            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />
+            <XAxis
+              dataKey="hour"
+              tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 10 }}
+              axisLine={false} tickLine={false}
+            />
+            <YAxis
+              tick={{ fill: "rgba(255,255,255,0.3)", fontSize: 10 }}
+              axisLine={false} tickLine={false}
+            />
+            <Tooltip
+              contentStyle={{
+                background:   "rgba(10,14,25,0.95)",
+                border:       "1px solid rgba(161,250,255,0.2)",
+                borderRadius: "8px",
+                color:        "#e8eafb",
+                fontSize:     12,
+              }}
+              cursor={{ fill: "rgba(255,255,255,0.03)" }}
+            />
+            <Bar dataKey="count" radius={[4, 4, 0, 0]} name="Attacks">
               {data.map((entry, i) => (
-                <Cell key={i} fill={SEVERITY_COLORS[entry.maxSeverity] || "#8b949e"} />
+                <Cell
+                  key={i}
+                  fill={entry.count === 0
+                    ? "rgba(161,250,255,0.12)"
+                    : SEVERITY_COLORS[entry.maxSeverity] || "rgba(255,255,255,0.2)"}
+                  fillOpacity={entry.count === 0 ? 0.5 : 0.85}
+                />
               ))}
             </Bar>
           </BarChart>

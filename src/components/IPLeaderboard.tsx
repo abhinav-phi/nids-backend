@@ -1,16 +1,20 @@
+/**
+ * IPLeaderboard.tsx — Top Adversaries (Stitch design)
+ * Matches Stitch: red border left for #1, danger labels, block button at bottom
+ * NO changes to API calls or state.
+ */
+
 import { useState, useEffect } from "react";
 import { getIPLeaderboard } from "@/api/client";
+import { Skull } from "lucide-react";
 
 interface IPEntry {
-  ip?: string;
-  source_ip?: string;
-  attack_count: number;
-  last_seen: string;
+  ip?:             string;
+  source_ip?:      string;
+  attack_count:    number;
+  last_seen:       string;
   top_attack_type?: string;
 }
-
-const RANK_MEDAL = ["🥇", "🥈", "🥉"];
-const RANK_COLOR = ["#e3b341", "#8b949e", "#cd7f32"];
 
 const relativeTime = (ts: string) => {
   if (!ts) return "—";
@@ -18,9 +22,15 @@ const relativeTime = (ts: string) => {
   const mins = Math.floor(diff / 60000);
   if (mins < 1)  return "just now";
   if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ago`;
+  return `${Math.floor(mins / 60)}h ago`;
 };
+
+// Stitch rank styles
+const RANK_STYLE = [
+  { border: "#ff716c", bg: "rgba(255,113,108,0.05)", badge: "Critical Vector", badgeColor: "#ff716c", badgeBg: "rgba(255,113,108,0.12)" },
+  { border: "#699cff", bg: "rgba(105,156,255,0.04)", badge: "Port Scanner",    badgeColor: "#699cff", badgeBg: "rgba(105,156,255,0.12)" },
+  { border: "rgba(255,255,255,0.12)", bg: "rgba(255,255,255,0.03)", badge: "Infiltration", badgeColor: "rgba(255,255,255,0.4)", badgeBg: "rgba(255,255,255,0.06)" },
+];
 
 const IPLeaderboard = () => {
   const [data, setData]       = useState<IPEntry[]>([]);
@@ -42,25 +52,30 @@ const IPLeaderboard = () => {
 
   return (
     <div
-      className="rounded-xl border p-4 h-full"
+      className="rounded-2xl p-6 flex flex-col h-full"
       style={{
-        background: "rgba(15,18,30,0.7)",
-        borderColor: "rgba(56,139,253,0.12)",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.25)",
+        background:   "rgba(26,31,46,0.6)",
+        backdropFilter: "blur(12px)",
+        border:       "1px solid rgba(255,255,255,0.06)",
+        boxShadow:    "0 4px 24px rgba(0,0,0,0.3)",
       }}
     >
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
-        <span className="text-sm font-semibold" style={{ color: "#e6edf3" }}>
-          Top Attacker IPs
+      <div className="flex items-center gap-2 mb-6">
+        <Skull size={18} style={{ color: "#ff716c" }} />
+        <span
+          className="text-lg font-bold"
+          style={{ color: "#e8eafb", fontFamily: "'Space Grotesk', sans-serif" }}
+        >
+          Top Adversaries
         </span>
         {data.length > 0 && (
           <span
-            className="text-[10px] font-mono-code px-2 py-0.5 rounded-full"
+            className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full"
             style={{
-              background: "rgba(248,81,73,0.1)",
-              color: "#f85149",
-              border: "1px solid rgba(248,81,73,0.2)",
+              background: "rgba(255,113,108,0.1)",
+              color:      "#ff716c",
+              border:     "1px solid rgba(255,113,108,0.2)",
             }}
           >
             {data.length} tracked
@@ -68,85 +83,88 @@ const IPLeaderboard = () => {
         )}
       </div>
 
+      {/* List */}
       {loading ? (
-        <div className="space-y-2">
+        <div className="space-y-3 flex-1">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-9 rounded-lg animate-pulse"
+            <div key={i} className="h-16 rounded-lg animate-pulse"
               style={{ background: "rgba(255,255,255,0.04)" }} />
           ))}
         </div>
       ) : data.length === 0 ? (
-        <div className="flex flex-col items-center justify-center h-48 gap-2"
+        <div className="flex-1 flex flex-col items-center justify-center gap-2"
           style={{ color: "rgba(255,255,255,0.2)" }}>
           <span className="text-2xl">🔍</span>
           <span className="text-sm">No attackers tracked yet</span>
         </div>
       ) : (
-        <div className="space-y-1.5">
-          {data.slice(0, 10).map((entry, i) => {
-            const ip = entry.ip || entry.source_ip || "unknown";
+        <div className="space-y-3 overflow-y-auto flex-1">
+          {data.slice(0, 5).map((entry, i) => {
+            const ip    = entry.ip || entry.source_ip || "unknown";
+            const rs    = RANK_STYLE[Math.min(i, RANK_STYLE.length - 1)];
             return (
               <div
                 key={ip + i}
-                className="flex items-center gap-3 px-3 py-2 rounded-lg transition-all hover:scale-[1.01]"
+                className="flex items-center justify-between p-3 rounded-lg transition-all hover:scale-[1.01]"
                 style={{
-                  background: i < 3
-                    ? `${RANK_COLOR[i]}0a`
-                    : "rgba(255,255,255,0.02)",
-                  border: `1px solid ${i < 3 ? RANK_COLOR[i] + "20" : "rgba(255,255,255,0.05)"}`,
+                  background:  rs.bg,
+                  borderLeft:  `2px solid ${rs.border}`,
+                  border:      `1px solid ${rs.border}22`,
+                  borderLeftWidth: "2px",
+                  borderLeftColor: rs.border,
                 }}
               >
-                {/* Rank */}
-                <div className="w-7 text-center shrink-0">
-                  {i < 3 ? (
-                    <span className="text-sm">{RANK_MEDAL[i]}</span>
-                  ) : (
-                    <span className="text-xs font-bold font-mono-code"
-                      style={{ color: "rgba(255,255,255,0.25)" }}>
-                      {i + 1}
-                    </span>
-                  )}
-                </div>
-
-                {/* IP */}
-                <div className="flex-1 min-w-0">
-                  <div className="font-mono-code text-xs font-medium truncate"
-                    style={{ color: i < 3 ? RANK_COLOR[i] : "#e6edf3" }}>
-                    {ip}
-                  </div>
-                  <div className="text-[10px] mt-0.5" style={{ color: "rgba(255,255,255,0.25)" }}>
-                    {relativeTime(entry.last_seen)}
-                  </div>
-                </div>
-
-                {/* Attack count */}
-                <div className="text-right shrink-0">
-                  <div className="text-sm font-bold" style={{ color: "#f85149" }}>
-                    {entry.attack_count}
-                  </div>
-                  <div className="text-[10px]" style={{ color: "rgba(255,255,255,0.25)" }}>
-                    attacks
-                  </div>
-                </div>
-
-                {/* Badge */}
-                {entry.top_attack_type && entry.top_attack_type !== "—" && (
+                <div className="flex flex-col min-w-0">
                   <span
-                    className="text-[10px] px-1.5 py-0.5 rounded shrink-0"
-                    style={{
-                      background: "rgba(248,81,73,0.1)",
-                      color: "rgba(248,81,73,0.7)",
-                      border: "1px solid rgba(248,81,73,0.15)",
-                    }}
+                    className="text-sm font-mono-code font-bold truncate"
+                    style={{ color: i === 0 ? "#ff716c" : "#e8eafb" }}
                   >
-                    {entry.top_attack_type}
+                    {ip}
                   </span>
-                )}
+                  <span
+                    className="text-[10px] font-bold uppercase mt-0.5"
+                    style={{ color: rs.badgeColor }}
+                  >
+                    {rs.badge}
+                  </span>
+                </div>
+
+                <span
+                  className="px-2 py-1 rounded text-xs font-bold shrink-0 ml-3"
+                  style={{
+                    background: rs.badgeBg,
+                    color:      rs.badgeColor,
+                  }}
+                >
+                  {entry.attack_count} Hits
+                </span>
               </div>
             );
           })}
         </div>
       )}
+
+      {/* Block button */}
+      <div className="mt-4 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+        <button
+          className="w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"
+          style={{
+            background: "rgba(255,255,255,0.04)",
+            border:     "1px solid rgba(255,255,255,0.08)",
+            color:      "rgba(255,255,255,0.4)",
+          }}
+          onMouseEnter={e => {
+            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)";
+            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.7)";
+          }}
+          onMouseLeave={e => {
+            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
+            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.4)";
+          }}
+        >
+          Open Global Blocklist
+        </button>
+      </div>
     </div>
   );
 };
