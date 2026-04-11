@@ -75,23 +75,49 @@ ROBUST_SCALER_PATH = ROOT / "robust_scaler.pkl"
 ENCODER_PATH  = ROOT / "label_encoder.pkl"
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 LABEL_COL = "Attack Type"   
-def load_data(raw_dir: Path) -> pd.DataFrame:
-    """Load all CICIDS2017 CSV files from data/raw/ into one DataFrame."""
+def load_data(raw_dir: Path, n_samples: int = 300_000) -> pd.DataFrame:
+    """Load CICIDS2017 in chunks and perform stratified sampling to conserve memory."""
     csv_files = sorted(raw_dir.glob("*.csv"))
     if not csv_files:
         log.error(f"No CSV files in {raw_dir}")
         log.error("Download CICIDS2017 and put CSVs in data/raw/")
         sys.exit(1)
-    log.info(f"Found {len(csv_files)} CSV(s): {[f.name for f in csv_files]}")
+        
+    log.info(f"Found {len(csv_files)} CSV(s). Pass 1: Scanning to calculate stratified fraction...")
+    total_rows = 0
+    for f in csv_files:
+        for chunk in pd.read_csv(f, chunksize=500_000, encoding="utf-8", low_memory=False, usecols=[0]):
+            total_rows += len(chunk)
+            
+    if total_rows <= n_samples:
+        frac = 1.0
+        log.info(f"Total rows ({total_rows:,}) <= target ({n_samples:,}). Will load full dataset.")
+    else:
+        frac = n_samples / total_rows
+        log.info(f"Total rows: {total_rows:,}. Sampling fraction: {frac:.5f}")
+        
+    log.info(f"Pass 2: Loading and sampling chunks...")
     frames = []
     for f in csv_files:
-        log.info(f"  Loading {f.name} ...")
-        df = pd.read_csv(f, encoding="utf-8", low_memory=False, nrows=50_000)
-        df.columns = df.columns.str.strip()
-        frames.append(df)
+        log.info(f"  Processing {f.name} ...")
+        for chunk in pd.read_csv(f, chunksize=100_000, encoding="utf-8", low_memory=False):
+            chunk.columns = chunk.columns.str.strip()
+            label_col = LABEL_COL
+            if label_col not in chunk.columns:
+                cands = [c for c in chunk.columns if "label" in c.lower() or "attack" in c.lower()]
+                if cands:
+                    label_col = cands[0]
+            if frac < 1.0 and label_col in chunk.columns:
+                def sample_group(group):
+                    n = max(1, int(len(group) * frac))
+                    return group.sample(n=min(n, len(group)), random_state=42)
+                chunk = chunk.groupby(label_col, group_keys=False).apply(sample_group)
+            frames.append(chunk)
+
     combined = pd.concat(frames, ignore_index=True)
-    log.info(f"Total rows loaded: {len(combined):,}")
+    log.info(f"Loaded and sampled dataset size: {len(combined):,} rows")
     return combined
+
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     original = len(df)
     df.replace([np.inf, -np.inf], np.nan, inplace=True)
@@ -271,7 +297,7 @@ def train_all_models(X_tr_std, X_te_std, X_tr_rob, X_te_rob,
     results = []
     scaler_cmp = []
     lr = LogisticRegression(max_iter=2000, C=1.0, solver="lbfgs",
-                             multi_class="auto", n_jobs=-1, random_state=42)
+                             multi_class="auto", class_weight="balanced", n_jobs=-1, random_state=42)
     results.append(train_eval(lr, "Logistic Regression",
                                X_tr_std, y_tr, X_te_std, y_te))
     dt_grid_params = {
@@ -280,12 +306,12 @@ def train_all_models(X_tr_std, X_te_std, X_tr_rob, X_te_rob,
         "min_samples_leaf": [1, 2, 4],
         "criterion":        ["gini", "entropy"],
     }
-    dt_gs_std = GridSearchCV(DecisionTreeClassifier(random_state=42),
+    dt_gs_std = GridSearchCV(DecisionTreeClassifier(random_state=42, class_weight="balanced"),
                               dt_grid_params, cv=3, scoring="f1_macro",
                               n_jobs=-1, verbose=0)
     r_dt_std = train_eval(dt_gs_std, "Decision Tree",
                            X_tr_std, y_tr, X_te_std, y_te, "Standard")
-    dt_gs_rob = GridSearchCV(DecisionTreeClassifier(random_state=42),
+    dt_gs_rob = GridSearchCV(DecisionTreeClassifier(random_state=42, class_weight="balanced"),
                               dt_grid_params, cv=3, scoring="f1_macro",
                               n_jobs=-1, verbose=0)
     r_dt_rob = train_eval(dt_gs_rob, "Decision Tree",
@@ -304,13 +330,13 @@ def train_all_models(X_tr_std, X_te_std, X_tr_rob, X_te_rob,
         "class_weight":     ["balanced", None],
     }
     rf_rs_std = RandomizedSearchCV(
-        RandomForestClassifier(random_state=42, n_jobs=-1),
+        RandomForestClassifier(random_state=42, class_weight="balanced", n_jobs=-1),
         rf_params, n_iter=10, cv=3, scoring="f1_macro",
         n_jobs=-1, random_state=42, verbose=0)
     r_rf_std = train_eval(rf_rs_std, "Random Forest",
                            X_tr_std, y_tr, X_te_std, y_te, "Standard")
     rf_rs_rob = RandomizedSearchCV(
-        RandomForestClassifier(random_state=42, n_jobs=-1),
+        RandomForestClassifier(random_state=42, class_weight="balanced", n_jobs=-1),
         rf_params, n_iter=10, cv=3, scoring="f1_macro",
         n_jobs=-1, random_state=42, verbose=0)
     r_rf_rob = train_eval(rf_rs_rob, "Random Forest",
@@ -378,15 +404,12 @@ def train_all_models(X_tr_std, X_te_std, X_tr_rob, X_te_rob,
             lgbm_model = lgbm_rob
     else:
         log.warning("LightGBM not installed — skipping. pip install lightgbm")
-    svm_n = min(15_000, len(X_tr_std))
-    log.info(f"\nSVM: sampling {svm_n:,} rows (O(n²) complexity limit)")
-    rng = np.random.RandomState(42)
-    idx = rng.choice(len(X_tr_std), svm_n, replace=False)
+    log.info(f"\nSVM: training on 15,000-sample subset for efficiency (WARNING: O(n²) complexity)")
     try:
         svm = SVC(C=10.0, kernel="rbf", gamma="scale",
-                   probability=True, random_state=42)
+                   class_weight="balanced", probability=True, random_state=42)
         r_svm = train_eval(svm, "SVM (RBF)",
-                            X_tr_std[idx], y_tr[idx],
+                            X_tr_std[:15000], y_tr[:15000],
                             X_te_std, y_te, "Standard")
         results.append(r_svm)
     except Exception as e:
@@ -480,15 +503,13 @@ def _clone_model(m):
     return clone(m)
 def cross_validate_top(results, X_tr_std, y_tr, n=2):
     sorted_r = sorted(results, key=lambda r: r["Macro F1"], reverse=True)
-    sample = min(30_000, len(X_tr_std))
-    idx = np.random.choice(len(X_tr_std), sample, replace=False)
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     for r in sorted_r[:n]:
         name  = r["Model"]
         model = r["_model"]
-        log.info(f"\n5-fold CV — {name} (sample={sample:,})")
+        log.info(f"\n5-fold CV — {name} (full dataset)")
         try:
-            scores = cross_val_score(model, X_tr_std[idx], y_tr[idx],
+            scores = cross_val_score(model, X_tr_std, y_tr,
                                      cv=skf, scoring="f1_macro", n_jobs=-1)
             log.info(f"  Folds :  {[round(s, 4) for s in scores]}")
             log.info(f"  Mean  :  {scores.mean():.4f} ± {scores.std():.4f}")
@@ -531,9 +552,9 @@ def main():
     log.info("=" * 65)
     log.info("  NIDS — ML Training Pipeline v2.0")
     log.info("=" * 65)
-    df = load_data(RAW_DIR)
+    df = load_data(RAW_DIR, n_samples=400_000)
     df = clean_data(df)
-    log.info("\n[Upgrade 1] Feature engineering on full CSV ...")
+    log.info("\n[Upgrade 1] Feature engineering ...")
     df_eng = engineer_features(df)
     X, y, _ = split_features_labels(df)
     n_orig_features = X.shape[1]
@@ -543,7 +564,8 @@ def main():
     np.save(PROCESSED_DIR / "X_test.npy", X_te)
     np.save(PROCESSED_DIR / "y_test.npy", y_te)
     log.info(f"Split: train={len(X_tr):,}  test={len(X_te):,}")
-    X_tr_bal, y_tr_bal = apply_smote(X_tr, y_tr)
+    USE_SMOTE = False
+    X_tr_bal, y_tr_bal = apply_smote(X_tr, y_tr) if USE_SMOTE else (X_tr, y_tr)
     log.info("\n[Upgrade 2] Fitting StandardScaler + RobustScaler ...")
     X_tr_std, X_te_std, X_tr_rob, X_te_rob, _, _ = scale_dual(X_tr_bal, X_te)
     log.info("\n[Upgrade 3] Running PCA analysis (experimental) ...")
