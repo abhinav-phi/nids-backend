@@ -2,8 +2,7 @@ venv/
 __pycache__/
 *.pyc
 *.pkl
-data/raw/
-data/processed/
+nids-backend/data/
 *.db
 .env
 node_modules/
