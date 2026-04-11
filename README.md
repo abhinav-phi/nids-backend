@@ -100,17 +100,17 @@ The model is trained on the **CICIDS2017** dataset — a widely used benchmark c
 
 | Step | Description |
 |------|-------------|
-| **A. Load** | Reads all CSVs from `data/raw/` (up to 50k rows each) |
+| **A. Load** | Reads all CSVs from `data/raw/` (up to **400,000 rows** via `load_data(RAW_DIR, n_samples=400_000)`) |
 | **B. Clean** | Removes NaN, Inf, and duplicate rows |
 | **C. Feature Engineering** | Adds 7 domain-specific ratio features (flow bytes/packet, fwd/bwd ratios, IAT jitter, etc.) |
 | **D. Split** | Separates features and label column (`Attack Type`) |
 | **E. Encode** | `LabelEncoder` → numeric class indices, saved as `label_encoder.pkl` |
 | **F. Stratified Split** | 80/20 train/test with `stratify=y` |
-| **G. SMOTE** | Oversamples minority classes on training data only |
+| **G. Class Balancing** | SMOTE disabled (`USE_SMOTE = False`); class imbalance handled natively via `class_weight="balanced"` on supported classifiers |
 | **H. Dual Scalers** | Fits `StandardScaler` **and** `RobustScaler`; best scaler saved as `scaler.pkl` |
 | **I. PCA Analysis** | Experimental comparison at 90/95/99% variance (not used in production) |
 | **J. Train 9 Models** | See table below |
-| **K. Cross-Validation** | 5-fold stratified CV on top 2 models |
+| **K. Cross-Validation** | 5-fold stratified CV on top 2 models, run on the **full** standard-scaled training dataset (`X_tr_std`) |
 | **L. Compare** | Sorted leaderboard by Macro F1 |
 | **M. Save Best** | Best model saved as `model.pkl` |
 
@@ -118,12 +118,12 @@ The model is trained on the **CICIDS2017** dataset — a widely used benchmark c
 
 | # | Model | Search Strategy | Notes |
 |---|-------|----------------|-------|
-| 1 | Logistic Regression | Fixed params | Baseline |
-| 2 | Decision Tree | GridSearchCV | `max_depth`, `criterion` |
-| 3 | Random Forest | RandomizedSearchCV | `n_estimators`, `max_features` |
+| 1 | Logistic Regression | Fixed params | Baseline; `class_weight="balanced"` |
+| 2 | Decision Tree | GridSearchCV | `max_depth`, `criterion`; `class_weight="balanced"` (both Standard & Robust scaler instances) |
+| 3 | Random Forest | RandomizedSearchCV | `n_estimators`, `max_features`; `class_weight="balanced"` (both Standard & Robust scaler instances) |
 | 4 | XGBoost | RandomizedSearchCV | `learning_rate`, `subsample` |
-| 5 | LightGBM | Fixed params | Optional (graceful fallback) |
-| 6 | SVM (RBF kernel) | Fixed params | 15k sample (O(n²) cap) |
+| 5 | LightGBM | Fixed params | Standard dependency (no longer optional fallback) |
+| 6 | SVM (RBF kernel) | Fixed params | Deterministic first-15k slice (`X_tr_std[:15000]`); no CV; `class_weight="balanced"` |
 | 7 | **Neural Network (MLP)** | Fixed params | `256→128→64` ReLU, Adam, early stopping |
 | 8 | Voting Ensemble | Soft voting | RF + XGB + LGBM/MLP |
 | 9 | Stacking Ensemble | LR meta-learner | RF + XGB + LGBM/MLP → LR |
@@ -311,9 +311,9 @@ python src/model/train.py
 ```
 
 This will:
-1. Load and clean the CSV data
+1. Load and clean the CSV data (up to 400,000 samples)
 2. Engineer 7 additional ratio features
-3. Balance classes with SMOTE
+3. Handle class imbalance natively via `class_weight="balanced"` (SMOTE disabled)
 4. Train and compare 9 ML models (takes ~10–30 minutes depending on hardware)
 5. Save the best model, scaler, and label encoder:
    - `nids-backend/model.pkl`
@@ -494,13 +494,14 @@ nids/
 | **FastAPI** | 0.110 | REST API + WebSocket server |
 | **Uvicorn** | 0.29 | ASGI web server |
 | **SQLAlchemy** | 2.0 | ORM + database layer |
-| **scikit-learn** | 1.4 | ML models, scalers, SMOTE |
+| **scikit-learn** | 1.4 | ML models, scalers, class weighting |
 | **XGBoost** | 2.0 | Gradient-boosted tree classifier |
-| **LightGBM** | 4.x | Optional fast gradient boosting |
+| **LightGBM** | 4.x | Fast gradient boosting |
 | **SHAP** | 0.45 | Model explainability |
 | **Scapy** | 2.5 | Live packet capture |
-| **imbalanced-learn** | 0.12 | SMOTE class balancing |
 | **pandas / numpy** | 2.2 / 1.26 | Data processing |
+| **matplotlib / seaborn** | — | Evaluation plots & notebook visualizations |
+| **requests** | — | API connection testing & sniffer scripts |
 | **SQLite / PostgreSQL** | — | Alert persistence |
 
 ### Frontend
@@ -508,7 +509,7 @@ nids/
 |------------|---------|------|
 | **React** | 18.3 | UI framework |
 | **TypeScript** | 5.8 | Type-safe JavaScript |
-| **Vite** | 7 | Build tool + dev server |
+| **Vite** | 7.3.2 | Build tool + dev server |
 | **Tailwind CSS** | 3.4 | Utility-first styling |
 | **shadcn/ui** | — | Accessible component primitives |
 | **Recharts** | 2.15 | Charts (line, pie, bar) |
@@ -567,13 +568,65 @@ nids/
 
 ## 🧩 Hackathon Demo Flow
 
-1. **Start backend** — `uvicorn src.api.main:app --reload --port 8000`
-2. **Start frontend** — `npm run dev` in `nids-frontend/`
-3. **Open dashboard** — [http://localhost:5173](http://localhost:5173)
-4. **Start sniffer** — `curl -X POST http://localhost:8000/api/sniffer/start`
-5. **Trigger attacks** — run any simulator from `src/simulation/`
-6. **Watch the dashboard** — alerts flood in, KPIs update, SHAP bars explain each detection
+> Open **3 separate terminals**. Terminals 2 & 3 must be run as **Administrator**.
 
+### 1️⃣ Frontend — Terminal 1
+
+```bash
+cd nids-frontend
+npm install        # first time only
+npm run dev
+```
+Dashboard live at → [http://localhost:5173](http://localhost:5173) *(keep this terminal open)*
+
+---
+
+### 2️⃣ Backend — Terminal 2 (Admin)
+
+```bash
+cd nids-backend
+venv\Scripts\activate          # first time: python -m venv venv
+pip install -r requirements.txt  # first time only
+uvicorn src.api.main:app --reload --port 8000
+```
+> Model is already trained — **do not re-run `train.py`**. *(keep this terminal open)*
+
+---
+
+### 3️⃣ Trigger Attacks — Terminal 3 (Admin)
+
+```bash
+cd nids-backend
+
+# Start the packet sniffer
+curl -X POST http://localhost:8000/api/sniffer/start
+# Expected: { "running": true }
+
+# Send attack traffic
+python send_attacks.py
+```
+Live alerts will appear on the dashboard in real time.
+
+---
+
+### 4️⃣ Changing Attack Type (`send_attacks.py`)
+
+Edit the `skiprows` value inside `send_attacks.py` to sample different attack traffic from the dataset:
+
+| Attack Type | `skiprows` value |
+|-------------|-----------------|
+| Brute Force | `500_000` |
+| DoS | `100_000` |
+| Port Scan | `2_000_000` |
+| DDoS / Web Attack | `1_500_000` |
+
+---
+
+### ⚠️ Important Notes
+
+- Place `send_attacks.py` inside the `nids-backend/` folder
+- Terminals 2 and 3 **must** be run in Administrator mode (packet capture requires elevated privileges)
+- **Do not close any terminal** while the demo is running
 ---
 
 ## 🛡️ Security Notes
@@ -582,6 +635,41 @@ nids/
 - On Windows, **Npcap** must be installed (download from [https://npcap.com](https://npcap.com))
 - CORS is configured for localhost dev servers; update `allow_origins` for production
 - The simulation scripts send real packets on your network — use `127.0.0.1` as target in demos
+
+---
+
+## 📝 Changelog
+
+### Latest Changes
+
+#### ML Pipeline (`src/model/train.py`)
+
+**Class Imbalance Strategy**
+- SMOTE has been disabled (`USE_SMOTE = False`) to eliminate synthetic sample noise and excessive memory overhead during training
+- `class_weight="balanced"` introduced natively on `LogisticRegression`, `DecisionTreeClassifier` (both Standard and Robust Scaler `GridSearchCV` instances), `RandomForestClassifier` (both Standard and Robust Scaler `RandomizedSearchCV` instances), and `SVC`
+
+**SVM Optimization**
+- Replaced randomized sampling index with a deterministic first-15k slice (`X_tr_std[:15000], y_tr[:15000]`) for fully reproducible SVM runs
+- Cross-validation and Grid Search removed from SVM to keep its computational footprint minimal given its O(n²) complexity
+
+**Data Loading & Validation**
+- Base sample size increased to **400,000** (`load_data(RAW_DIR, n_samples=400_000)`) for a richer training distribution
+- `cross_validate_top()` now runs 5-Fold Stratified CV on the full standard-scaled dataset (`X_tr_std`) instead of a random 30k subsample, producing more robust evaluation metrics
+
+#### Dependencies
+
+**Backend (`requirements.txt`)**
+- Added `matplotlib` — used in evaluation scripts and notebooks
+- Added `seaborn` — used for notebook visualizations
+- Added `lightgbm` — promoted from optional fallback to standard required dependency
+- Added `requests` — used in API connection testing and sniffer scripts
+- Removed `imbalanced-learn` — no longer needed following SMOTE removal
+
+**Frontend (`package-lock.json`)**
+- `axios`: `1.13.6` → `1.15.0`
+- `proxy-from-env`: `1.1.0` → `2.1.0`
+- `lodash`: `4.17.23` → `1.18.1`
+- `vite`: `7.3.1` → `7.3.2`
 
 ---
 
