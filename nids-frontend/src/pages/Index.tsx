@@ -6,6 +6,7 @@ import AttackPieChart from "@/components/AttackPieChart";
 import AlertFeed from "@/components/AlertFeed";
 import IPLeaderboard from "@/components/IPLeaderboard";
 import Sidebar from "@/components/Sidebar";
+import Chatbot from "@/components/Chatbot";
 import { useWebSocket } from "@/hooks/useWebSocket";
 const Index = () => {
   const { isConnected, alertHistory } = useWebSocket();
@@ -55,6 +56,9 @@ const Index = () => {
           </div>
         </footer>
       </div>
+
+      {/* Floating AI Chatbot */}
+      <Chatbot />
     </div>
   );
 };
