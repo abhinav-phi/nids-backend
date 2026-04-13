@@ -89,3 +89,13 @@
 .animate-slide-down   { animation: slide-down 280ms ease-out forwards; overflow: hidden; }
 .animate-pulse-number { animation: pulse-number 400ms ease-out; }
 .animate-blink-dot    { animation: blink-dot 1.5s ease-in-out infinite; }
+
+html.light-mode {
+  filter: invert(1) hue-rotate(180deg);
+  background-color: #f5f1e6;
+}
+html.light-mode img,
+html.light-mode svg,
+html.light-mode canvas {
+  filter: invert(1) hue-rotate(180deg);
+}
