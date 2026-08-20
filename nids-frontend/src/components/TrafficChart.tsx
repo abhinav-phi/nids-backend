@@ -88,10 +88,9 @@ const TrafficChart = ({ alertHistory }: Props) => {
           className="flex items-center justify-center h-52 rounded-xl"
           style={{ background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.06)" }}
         >
-          <div className="flex flex-col items-center gap-2" style={{ color: "rgba(255,255,255,0.2)" }}>
-            <span className="text-2xl">📡</span>
-            <span className="text-sm">No traffic data yet — waiting for flows...</span>
-          </div>
+          <span className="text-sm" style={{ color: "rgba(255,255,255,0.25)" }}>
+            No traffic data yet — waiting for flows from the backend...
+          </span>
         </div>
       ) : (
         <ResponsiveContainer width="100%" height={200}>
