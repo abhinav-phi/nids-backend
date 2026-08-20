@@ -1,0 +1,16 @@
+{
+  "model_type": "LGBMClassifier",
+  "feature_count": 52,
+  "classes": [
+    "Bots",
+    "Brute Force",
+    "DDoS",
+    "DoS",
+    "Normal Traffic",
+    "Port Scanning",
+    "Web Attacks"
+  ],
+  "severity_map_keys": 21,
+  "feature_source": "CICIDS_FEATURES (src/features/extractor.py)",
+  "generated_by": "src/model/predict.py::_write_manifest"
+}
