@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { getIPLeaderboard } from "@/api/client";
-import { Skull } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 interface IPEntry {
   ip?:             string;
   source_ip?:      string;
@@ -49,7 +50,6 @@ const IPLeaderboard = () => {
     >
       {}
       <div className="flex items-center gap-2 mb-6">
-        <Skull size={18} style={{ color: "#ff716c" }} />
         <span
           className="text-lg font-bold"
           style={{ color: "#e8eafb", fontFamily: "'Space Grotesk', sans-serif" }}
@@ -78,16 +78,16 @@ const IPLeaderboard = () => {
           ))}
         </div>
       ) : data.length === 0 ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2"
-          style={{ color: "rgba(255,255,255,0.2)" }}>
-          <span className="text-2xl">🔍</span>
-          <span className="text-sm">No attackers tracked yet</span>
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-sm"
+          style={{ color: "rgba(255,255,255,0.25)" }}>
+          No attacker IPs recorded yet.
         </div>
       ) : (
         <div className="space-y-3 overflow-y-auto flex-1">
           {data.slice(0, 5).map((entry, i) => {
             const ip    = entry.ip || entry.source_ip || "unknown";
             const rs    = RANK_STYLE[Math.min(i, RANK_STYLE.length - 1)];
+            const topType = entry.top_attack_type;
             return (
               <div
                 key={ip + i}
@@ -108,10 +108,10 @@ const IPLeaderboard = () => {
                     {ip}
                   </span>
                   <span
-                    className="text-[10px] font-bold uppercase mt-0.5"
+                    className="text-[10px] font-bold uppercase mt-0.5 truncate"
                     style={{ color: rs.badgeColor }}
                   >
-                    {rs.badge}
+                    {topType || rs.badge}
                   </span>
                 </div>
                 <span
@@ -130,24 +130,17 @@ const IPLeaderboard = () => {
       )}
       {}
       <div className="mt-4 pt-4" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-        <button
-          className="w-full py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"
+        <Link
+          to="/network"
+          className="w-full flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-colors"
           style={{
             background: "rgba(255,255,255,0.04)",
             border:     "1px solid rgba(255,255,255,0.08)",
             color:      "rgba(255,255,255,0.4)",
           }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.08)";
-            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.7)";
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLElement).style.background = "rgba(255,255,255,0.04)";
-            (e.currentTarget as HTMLElement).style.color = "rgba(255,255,255,0.4)";
-          }}
         >
-          Open Global Blocklist
-        </button>
+          View Attack Flows <ArrowRight size={11} />
+        </Link>
       </div>
     </div>
   );
