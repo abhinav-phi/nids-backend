@@ -30,6 +30,7 @@ except ImportError:
     print("[WARNING] Scapy not installed. Sniffer will not capture live packets.")
 sys.path.insert(0, str(__import__('pathlib').Path(__file__).resolve().parents[2]))
 from src.features.extractor import FlowExtractor
+from src.model.predict import is_benign
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  [SNIFFER]  %(message)s",
@@ -40,6 +41,8 @@ FLOW_TIMEOUT_SECONDS = 30
 MAX_PACKETS_PER_FLOW = 500      
 API_PREDICT_URL      = "http://localhost:8000/api/predict"
 ACTIVE_FLOW_LOG_INTERVAL = 15   
+API_MAX_RETRIES      = 3        
+API_RETRY_BACKOFF_S  = 2.0   
 FlowKey = Tuple[str, str, int, int, str]
 @dataclass
 class Flow:
@@ -120,6 +123,8 @@ class NetworkSniffer:
         flow_timeout: int = FLOW_TIMEOUT_SECONDS,
         direct_predict_fn: Optional[Callable] = None,
         ws_broadcast_fn: Optional[Callable] = None,
+        max_retries: int = API_MAX_RETRIES,
+        retry_backoff_s: float = API_RETRY_BACKOFF_S,
     ):
         if interface == "auto":
             self.interface = detect_interface()
@@ -127,6 +132,8 @@ class NetworkSniffer:
             self.interface = interface
         self.api_url = api_url
         self.flow_timeout = flow_timeout
+        self.max_retries = max_retries
+        self.retry_backoff_s = retry_backoff_s
         self._direct_predict_fn = direct_predict_fn
         self._ws_broadcast_fn = ws_broadcast_fn
         self._flows: Dict[FlowKey, Flow] = {}
@@ -136,6 +143,8 @@ class NetworkSniffer:
         self.total_flows     = 0
         self.total_api_calls = 0
         self.total_alerts    = 0
+        self.total_retries   = 0
+        self.total_dropped   = 0
         self._running = False
         self._capture_thread: Optional[threading.Thread] = None
         self._timeout_thread: Optional[threading.Thread] = None
@@ -318,35 +327,60 @@ class NetworkSniffer:
         """
         POST feature dictionary to the FastAPI /api/predict endpoint.
         Runs in its own thread so it doesn't block the capture pipeline.
+        Retries transient failures (connection refused, timeout) with
+        exponential backoff up to `max_retries`; only then drops the flow.
         """
-        try:
-            response = requests.post(
-                self.api_url,
-                json=features,
-                timeout=10
-            )
-            self.total_api_calls += 1
-            if response.status_code == 200:
-                result = response.json()
-                pred   = result.get("prediction", "?")
-                conf   = result.get("confidence", 0)
-                sev    = result.get("severity", "?")
-                if pred != "BENIGN":
-                    self.total_alerts += 1
+        last_error = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = requests.post(
+                    self.api_url,
+                    json=features,
+                    timeout=10
+                )
+                self.total_api_calls += 1
+                if response.status_code == 200:
+                    result = response.json()
+                    pred   = result.get("prediction", "?")
+                    conf   = result.get("confidence", 0)
+                    sev    = result.get("severity", "?")
+                    if not is_benign(pred):
+                        self.total_alerts += 1
+                        log.warning(
+                            f"🚨 ALERT [{sev}]  {src_ip} → {dst_ip}  "
+                            f"{pred}  ({conf*100:.1f}% confidence)"
+                        )
+                    else:
+                        log.debug(f"✓ benign  {src_ip} → {dst_ip}")
+                    return
+                elif response.status_code in (400, 401, 422, 503):
                     log.warning(
-                        f"🚨 ALERT [{sev}]  {src_ip} → {dst_ip}  "
-                        f"{pred}  ({conf*100:.1f}% confidence)"
+                        f"API rejected flow (HTTP {response.status_code}, "
+                        f"attempt {attempt}/{self.max_retries}): "
+                        f"{response.text[:200]}"
                     )
+                    return
                 else:
-                    log.debug(f"✓ BENIGN  {src_ip} → {dst_ip}")
-            else:
-                log.warning(f"API returned {response.status_code}: {response.text[:200]}")
-        except requests.exceptions.ConnectionError:
-            log.debug("API not reachable. Is the FastAPI server running?")
-        except requests.exceptions.Timeout:
-            log.warning("API call timed out.")
-        except Exception as e:
-            log.warning(f"API call failed: {e}")
+                    last_error = f"HTTP {response.status_code}"
+            except requests.exceptions.ConnectionError as e:
+                last_error = "API not reachable"
+            except requests.exceptions.Timeout as e:
+                last_error = "API call timed out"
+            except Exception as e:
+                last_error = f"{e}"
+            if attempt < self.max_retries:
+                self.total_retries += 1
+                delay = self.retry_backoff_s * (2 ** (attempt - 1))
+                log.debug(
+                    f"Predict attempt {attempt} failed ({last_error}); "
+                    f"retrying in {delay:.1f}s"
+                )
+                time.sleep(delay)
+        self.total_dropped += 1
+        log.warning(
+            f"Flow dropped after {self.max_retries} attempts ({last_error}): "
+            f"{src_ip} → {dst_ip}"
+        )
     def _get_flow_key(self, pkt) -> Optional[FlowKey]:
         """
         Build a 5-tuple from a packet. Returns None for non-IP packets.
@@ -444,6 +478,8 @@ class NetworkSniffer:
             "active_flows":    active_flows,
             "total_api_calls": self.total_api_calls,
             "total_alerts":    self.total_alerts,
+            "total_retries":   self.total_retries,
+            "total_dropped":   self.total_dropped,
             "running":         self._running,
         }
 def main():
