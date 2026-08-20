@@ -7,7 +7,7 @@ to support CICIDS2017 feature names that contain special characters like '/'.
 PredictRequest is kept for documentation/reference but not used in the route.
 """
 from typing import Optional, List, Dict
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 class PredictRequestDoc(BaseModel):
     """
     Documentation schema — shows the expected feature names.
@@ -50,7 +50,7 @@ class HealthResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    message: str
+    message: str = Field(..., min_length=1, max_length=2000)
     history: Optional[List[dict]] = None
 
 
