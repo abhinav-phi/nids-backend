@@ -24,11 +24,14 @@ function normalizeAlert(raw: Record<string, unknown>): Alert {
     severity:    (raw.severity as string)    || "LOW",
     confidence:  (raw.confidence as number)  || 0,
     timestamp:   (raw.timestamp as string)   || new Date().toISOString(),
-    shap_top5: ((raw.shap_top5 as any[]) || []).map((s: any) => ({
-      feature: s.feature,
-      value:   s.value ?? s.impact ?? 0,
-      impact:  s.value ?? s.impact ?? 0,  
-    })),
+    shap_top5: ((raw.shap_top5 ?? []) as Record<string, unknown>[]).map((s) => {
+      const num = (v: unknown) => (typeof v === "number" ? v : 0);
+      return {
+        feature: String(s.feature ?? ""),
+        value:   num(s.value ?? s.impact),
+        impact:  num(s.value ?? s.impact),
+      };
+    }),
   } as Alert;
 }
 export function useWebSocket(url = "ws://localhost:8000/ws/live") {
