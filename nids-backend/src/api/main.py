@@ -18,12 +18,16 @@ import time
 import json
 import logging
 import asyncio
+from collections import defaultdict
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import List, Optional
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from src.api.database import engine, Base, SessionLocal
 from src.api.routes import predict, alerts, stats, chatbot
+from src.api.constants import BENIGN_LABELS
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s  [%(name)s]  %(levelname)s  %(message)s",
@@ -93,6 +97,34 @@ app = FastAPI(
     version="2.0.0",
     lifespan=lifespan,
 )
+
+# ── Optional shared-secret auth (defence-in-depth; not full auth) ──
+# Set NIDS_API_SECRET to require the "X-API-Key" header on all /api/*
+# calls. CORS restricts browsers only — it is NOT authentication.
+API_SECRET = os.getenv("NIDS_API_SECRET", "").strip()
+RATE_LIMIT_PER_MINUTE = int(os.getenv("NIDS_RATE_LIMIT", "120"))
+_rate_hits: dict = defaultdict(list)
+OPEN_PATHS = {"/", "/health", "/docs", "/openapi.json", "/redoc"}
+
+@app.middleware("http")
+async def security_middleware(request, call_next):
+    path = request.url.path
+    if path not in OPEN_PATHS:
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        window = [t for t in _rate_hits[client_ip] if t > now - 60]
+        window.append(now)
+        _rate_hits[client_ip] = window
+        if len(window) > RATE_LIMIT_PER_MINUTE:
+            return JSONResponse(status_code=429, content={"detail": "Rate limit exceeded."})
+        if API_SECRET and path.startswith("/api/"):
+            if request.headers.get("X-API-Key") != API_SECRET:
+                return JSONResponse(
+                    status_code=401,
+                    content={"detail": "Missing or invalid API key. Set NIDS_API_SECRET on the server."},
+                )
+    return await call_next(request)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000", "http://localhost:5173", "http://localhost:8080", "http://localhost:5174"],
@@ -113,31 +145,33 @@ async def websocket_live(websocket: WebSocket):
     await ws_manager.connect(websocket)
     try:
         db = SessionLocal()
-        from src.api.models import Alert
-        from sqlalchemy import desc
-        recent = (
-            db.query(Alert)
-            .filter(Alert.prediction != "BENIGN")
-            .order_by(desc(Alert.timestamp))
-            .limit(50)
-            .all()
-        )
-        db.close()
-        if recent:
-            history = []
-            for a in reversed(recent):
-                history.append({
-                    "id":          a.id,
-                    "timestamp":   a.timestamp.isoformat() if a.timestamp else "",
-                    "src_ip":      a.source_ip or "unknown",
-                    "source_ip":   a.source_ip or "unknown",
-                    "attack_type": a.prediction,
-                    "prediction":  a.prediction,
-                    "severity":    a.severity,
-                    "confidence":  round(a.confidence or 0, 4),
-                    "shap_top5":   json.loads(a.shap_json) if a.shap_json else [],
-                })
-            await websocket.send_text(json.dumps(history))
+        try:
+            from src.api.models import Alert
+            from sqlalchemy import desc
+            recent = (
+                db.query(Alert)
+                .filter(Alert.prediction.notin_(BENIGN_LABELS))
+                .order_by(desc(Alert.timestamp))
+                .limit(50)
+                .all()
+            )
+            if recent:
+                history = []
+                for a in reversed(recent):
+                    history.append({
+                        "id":          a.id,
+                        "timestamp":   a.timestamp.isoformat() if a.timestamp else "",
+                        "src_ip":      a.source_ip or "unknown",
+                        "source_ip":   a.source_ip or "unknown",
+                        "attack_type": a.prediction,
+                        "prediction":  a.prediction,
+                        "severity":    a.severity,
+                        "confidence":  round(a.confidence or 0, 4),
+                        "shap_top5":   json.loads(a.shap_json) if a.shap_json else [],
+                    })
+                await websocket.send_text(json.dumps(history))
+        finally:
+            db.close()
     except Exception as e:
         log.warning(f"[WS] Could not send history: {e}")
     try:
@@ -208,6 +242,33 @@ def health_check():
         "uptime_seconds": round(time.time() - _startup_time, 1),
         "ws_clients":     len(ws_manager.active),
     }
+@app.get("/api/system", tags=["System"])
+def system_status():
+    """Aggregated system status for the Settings page (real data only)."""
+    health = health_check()
+    manifest = None
+    manifest_path = Path(__file__).resolve().parents[2] / "manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as e:
+            manifest = {"read_error": str(e)}
+    sniffer = None
+    if _sniffer:
+        try:
+            sniffer = _sniffer.get_stats()
+        except Exception as e:
+            sniffer = {"read_error": str(e)}
+    return {
+        "health":   health,
+        "manifest": manifest,
+        "sniffer":  sniffer,
+        "rate_limit_per_minute": RATE_LIMIT_PER_MINUTE,
+        "api_secret_configured": bool(API_SECRET),
+        "capture_auto_start":    bool(os.environ.get("NIDS_CAPTURE", "").strip()),
+    }
+
+
 @app.get("/", include_in_schema=False)
 def root():
     return {
