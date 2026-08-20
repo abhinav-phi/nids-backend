@@ -20,13 +20,15 @@ const COLORS = [
 
 const RADIAN = Math.PI / 180;
 
-const renderCustomLabel = ({
-  cx,
-  cy,
-  midAngle,
-  outerRadius,
-  percent,
-}: any) => {
+interface LabelProps {
+  cx: number;
+  cy: number;
+  midAngle: number;
+  outerRadius: number;
+  percent: number;
+}
+
+const renderCustomLabel = ({ cx, cy, midAngle, outerRadius, percent }: LabelProps) => {
   if (percent < 0.01) return null;
 
   const ELBOW_START = outerRadius + 10;
@@ -67,7 +69,13 @@ const renderCustomLabel = ({
 };
 
 /* ── Custom Tooltip — fully white text, no browser default black ── */
-const CustomTooltip = ({ active, payload }: any) => {
+interface TooltipPayloadItem {
+  name?: string;
+  value?: number;
+  payload?: { total?: number; fill?: string };
+}
+
+const CustomTooltip = ({ active, payload }: { active?: boolean; payload?: TooltipPayloadItem[] }) => {
   if (!active || !payload || !payload.length) return null;
   const item = payload[0];
   const total: number = item?.payload?.total ?? 0;
@@ -76,7 +84,7 @@ const CustomTooltip = ({ active, payload }: any) => {
     <div
       style={{
         background: "rgba(15,18,30,0.97)",
-        border: `1px solid ${item.payload.fill}55`,
+        border: `1px solid ${item.payload?.fill ?? "#fff"}55`,
         borderRadius: "10px",
         padding: "8px 14px",
         color: "#ffffff",
@@ -162,6 +170,10 @@ const AttackPieChart = () => {
       {/* ── Body ── */}
       {loading ? (
         <div className="flex-1 animate-pulse bg-white/5 rounded-xl" />
+      ) : total === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-sm" style={{ color: "rgba(255,255,255,0.25)" }}>
+          No attack data recorded yet.
+        </div>
       ) : (
         <div className="flex items-center gap-2 flex-1 min-h-0">
 
@@ -212,7 +224,7 @@ const AttackPieChart = () => {
                   fill="rgba(255,255,255,0.4)"
                   fontSize={11}
                 >
-                  Active Alerts
+                  Total Attacks
                 </text>
 
                 {/* Custom tooltip so text is always white */}
