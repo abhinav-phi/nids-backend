@@ -14,7 +14,10 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.api.database import Base, get_db
+from src.api.models import Alert
 from src.api.main import app
+from src.features.extractor import CICIDS_FEATURES
+from src.model.predict import get_severity, is_benign
 TEST_DB_URL = "sqlite:///./test_nids.db"
 test_engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 TestSession  = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
@@ -28,39 +31,62 @@ def override_get_db():
 app.dependency_overrides[get_db] = override_get_db
 client = TestClient(app)
 SAMPLE_FEATURES = {
-    "flow_duration":          1234567.0,
-    "total_fwd_packets":      8.0,
-    "total_bwd_packets":      6.0,
-    "total_fwd_bytes":        3456.0,
-    "total_bwd_bytes":        1200.0,
-    "packet_length_mean":     300.0,
-    "packet_length_max":      1460.0,
-    "packet_length_min":      52.0,
-    "packet_length_std":      220.0,
-    "fwd_packet_length_mean": 432.0,
-    "fwd_packet_length_max":  1460.0,
-    "fwd_packet_length_min":  52.0,
-    "fwd_packet_length_std":  280.0,
-    "bwd_packet_length_mean": 200.0,
-    "bwd_packet_length_max":  800.0,
-    "bwd_packet_length_min":  52.0,
-    "bwd_packet_length_std":  150.0,
-    "flow_iat_mean":          50000.0,
-    "flow_iat_max":           200000.0,
-    "flow_iat_min":           1000.0,
-    "flow_iat_std":           30000.0,
-    "packets_per_second":     11.4,
-    "bytes_per_second":       3800.0,
-    "syn_flag_count":         1.0,
-    "fin_flag_count":         1.0,
-    "rst_flag_count":         0.0,
-    "ack_flag_count":         6.0,
-    "psh_flag_count":         2.0,
-    "urg_flag_count":         0.0,
-    "_source_ip":             0.0,
-    "_destination_ip":        0.0,
-    "_src_port":              12345.0,
-    "_dst_port":              80.0,
+    "Destination Port":            80.0,
+    "Flow Duration":               1234567.0,
+    "Total Fwd Packets":           8.0,
+    "Total Length of Fwd Packets": 3456.0,
+    "Fwd Packet Length Max":       1460.0,
+    "Fwd Packet Length Min":       52.0,
+    "Fwd Packet Length Mean":      432.0,
+    "Fwd Packet Length Std":       280.0,
+    "Bwd Packet Length Max":       800.0,
+    "Bwd Packet Length Min":       52.0,
+    "Bwd Packet Length Mean":      200.0,
+    "Bwd Packet Length Std":       150.0,
+    "Flow Bytes/s":                3800.0,
+    "Flow Packets/s":              11.4,
+    "Flow IAT Mean":               50000.0,
+    "Flow IAT Std":                30000.0,
+    "Flow IAT Max":                200000.0,
+    "Flow IAT Min":                1000.0,
+    "Fwd IAT Total":               400000.0,
+    "Fwd IAT Mean":                50000.0,
+    "Fwd IAT Std":                 30000.0,
+    "Fwd IAT Max":                 200000.0,
+    "Fwd IAT Min":                 1000.0,
+    "Bwd IAT Total":               140000.0,
+    "Bwd IAT Mean":                35000.0,
+    "Bwd IAT Std":                 20000.0,
+    "Bwd IAT Max":                 150000.0,
+    "Bwd IAT Min":                 2000.0,
+    "Fwd Header Length":           208.0,
+    "Bwd Header Length":           208.0,
+    "Fwd Packets/s":               6.5,
+    "Bwd Packets/s":               4.9,
+    "Min Packet Length":           52.0,
+    "Max Packet Length":           1460.0,
+    "Packet Length Mean":          388.5,
+    "Packet Length Std":           220.0,
+    "Packet Length Variance":      48400.0,
+    "FIN Flag Count":              1.0,
+    "PSH Flag Count":              2.0,
+    "ACK Flag Count":              6.0,
+    "Average Packet Size":         388.5,
+    "Subflow Fwd Bytes":           3456.0,
+    "Init_Win_bytes_forward":      1024.0,
+    "Init_Win_bytes_backward":     2048.0,
+    "act_data_pkt_fwd":            4.0,
+    "min_seg_size_forward":        52.0,
+    "Active Mean":                 61000.0,
+    "Active Max":                  61000.0,
+    "Active Min":                  61000.0,
+    "Idle Mean":                   0.0,
+    "Idle Max":                    0.0,
+    "Idle Min":                    0.0,
+    "_source_ip":                 "192.168.1.50",
+    "_destination_ip":            "93.184.216.34",
+    "_src_port":                  12345.0,
+    "_dst_port":                  80.0,
 }
 def test_health_returns_ok():
     response = client.get("/health")
@@ -138,14 +164,84 @@ def test_predict_severity_is_valid():
         pytest.skip("model.pkl not found")
     data = response.json()
     assert data["severity"] in ("NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+def test_predict_rejects_payload_without_features():
+    """Regression: a payload with zero of the 52 features is invalid (400),
+    and no longer falls through to the model with all-default zeros."""
+    response = client.post("/api/predict", json={"junk": 1.0})
+    assert response.status_code == 400
+
+def test_predict_with_real_feature_names():
+    """A payload using the real CICIDS column names reaches the model,
+    returns 200, and carries the required keys."""
+    response = client.post("/api/predict", json=SAMPLE_FEATURES)
+    if response.status_code == 503:
+        pytest.skip("model.pkl not found — run train.py first")
+    assert response.status_code == 200
+    data = response.json()
+    for key in ["alert_id", "prediction", "confidence", "severity", "timestamp"]:
+        assert key in data, f"Missing key: {key}"
+    assert data["severity"] in ("NONE", "LOW", "MEDIUM", "HIGH", "CRITICAL")
+
 def test_root_redirects():
     response = client.get("/")
     assert response.status_code == 200
     assert "docs" in response.json()
+
+
+# ── Regression: ISSUE-01 — benign-label mismatch ──
+# The deployed model emits "Normal Traffic", not "BENIGN". Every route
+# filter must treat BOTH spellings as benign, otherwise the benign half
+# of the dataset is counted as attacks.
+
+def _insert_alert(prediction, severity="NONE", confidence=0.99):
+    db = TestSession()
+    try:
+        db.add(Alert(
+            source_ip="203.0.113.7",
+            destination_ip="10.0.0.1",
+            src_port=443,
+            dst_port=80,
+            prediction=prediction,
+            confidence=confidence,
+            severity=severity,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+def test_stats_counts_both_benign_spellings_as_benign():
+    before = client.get("/api/stats").json()
+    _insert_alert("Normal Traffic")
+    _insert_alert("BENIGN")
+    after = client.get("/api/stats").json()
+    assert after["benign_count"] == before["benign_count"] + 2
+    assert after["total_attacks"] == before["total_attacks"]
+
+def test_alerts_default_excludes_normal_traffic():
+    response = client.get("/api/alerts")
+    predictions = {a["prediction"] for a in response.json()}
+    assert "Normal Traffic" not in predictions
+    assert "BENIGN" not in predictions
+
+def test_is_benign_accepts_all_spellings():
+    for label in ["BENIGN", "Normal Traffic", "benign", "normal traffic"]:
+        assert is_benign(label), f"is_benign('{label}') should be True"
+    for label in ["DDoS", "Bots", "Port Scanning", "Brute Force", "DoS"]:
+        assert not is_benign(label), f"is_benign('{label}') should be False"
+
+def test_dos_family_maps_to_critical():
+    assert get_severity("DoS") == "CRITICAL"
+    assert get_severity("DDoS") == "CRITICAL"
+    assert get_severity("Dos Hulk") == "CRITICAL"
+
+def test_normal_traffic_maps_to_none():
+    assert get_severity("Normal Traffic") == "NONE"
+
 def teardown_module(module):
-    """Remove SQLite test file after tests complete."""
+    """Remove SQLite test file after tests complete (best effort on Windows)."""
     import os
+    test_engine.dispose()
     try:
         os.remove("test_nids.db")
-    except FileNotFoundError:
+    except OSError:
         pass
