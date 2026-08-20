@@ -11,6 +11,7 @@ from sqlalchemy import desc
 from src.api.database import get_db
 from src.api.models import Alert
 from src.api.schemas import AlertResponse
+from src.api.constants import BENIGN_LABELS
 log = logging.getLogger(__name__)
 router = APIRouter()
 @router.get("/alerts", response_model=List[AlertResponse])
@@ -38,7 +39,7 @@ def get_alerts(
     """
     query = db.query(Alert).order_by(desc(Alert.timestamp))
     if exclude_benign:
-        query = query.filter(Alert.prediction != "BENIGN")
+        query = query.filter(Alert.prediction.notin_(BENIGN_LABELS))
     if type:
         query = query.filter(Alert.prediction.ilike(f"%{type}%"))
     if severity:
