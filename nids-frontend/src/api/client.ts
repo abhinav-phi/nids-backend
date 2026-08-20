@@ -20,6 +20,10 @@ export const getIPLeaderboard = () =>
   api.get("/api/ip-leaderboard").then((r) => r.data);
 export const checkHealth = () =>
   api.get("/health").then((r) => r.data);
+export const getSystemStatus = () =>
+  api.get("/api/system").then((r) => r.data);
+export const getSnifferStats = () =>
+  api.get("/api/sniffer/stats").then((r) => r.data);
 
 export const sendChatMessage = (
   message: string,
