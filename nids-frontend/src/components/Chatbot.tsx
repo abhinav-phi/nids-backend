@@ -10,19 +10,39 @@ interface Message {
   content: string;
 }
 
-/* ── Markdown-lite renderer ───────────────────────────────── */
+/* ── Safe markdown-lite renderer (HTML is always escaped) ── */
 
-function renderMarkdown(text: string) {
-  // Convert **bold**
-  let html = text.replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
-  // Convert `code`
-  html = html.replace(/`([^`]+)`/g, '<code class="chat-inline-code">$1</code>');
-  // Convert bullet points
-  html = html.replace(/^[•●]\s?/gm, "• ");
-  // Convert newlines to <br/>
-  html = html.replace(/\n/g, "<br/>");
+function escapeHtml(text: string) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export function renderMarkdown(text: string) {
+  const lines = text.split(/\r?\n/);
+  let html = "";
+  let inList = false;
+  for (const rawLine of lines) {
+    const line = rawLine.trimEnd();
+    const escapeHtmlInline = (s: string) =>
+      escapeHtml(s).replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>");
+    const isBullet = /^([-*•])\s+/.test(line);
+    if (isBullet) {
+      if (!inList) { html += "<ul style='margin:0;padding-left:1rem'>"; inList = true; }
+      html += `<li>${escapeHtmlInline(line.replace(/^([-*•])\s+/, ""))}</li>`;
+    } else {
+      if (inList) { html += "</ul>"; inList = false; }
+      html += `<p style='margin:0'>${escapeHtmlInline(line)}</p>`;
+    }
+  }
+  if (inList) html += "</ul>";
   return html;
 }
+
+const MAX_CLIENT_MESSAGE_LENGTH = 2000;
 
 /* ── Typing indicator ─────────────────────────────────────── */
 
@@ -89,6 +109,7 @@ const Chatbot = () => {
     async (text?: string) => {
       const msg = (text ?? input).trim();
       if (!msg || isLoading) return;
+      if (msg.length > MAX_CLIENT_MESSAGE_LENGTH) return;
 
       const userMsg: Message = {
         id: `u-${Date.now()}`,
@@ -110,14 +131,15 @@ const Chatbot = () => {
           content: reply,
         };
         setMessages((prev) => [...prev, aiMsg]);
-      } catch (err: any) {
-        const errorText =
-          err?.response?.data?.detail ??
-          "Sorry, I couldn't reach the AI service. Please try again.";
+      } catch (err: unknown) {
+        const detail = (err as { response?: { data?: { detail?: unknown } } })?.response?.data?.detail;
+        const errorText = typeof detail === "string"
+          ? detail
+          : "Sorry, I couldn't reach the AI service. Please try again.";
         const errMsg: Message = {
           id: `e-${Date.now()}`,
           role: "assistant",
-          content: `⚠️ ${errorText}`,
+          content: `${errorText}`,
         };
         setMessages((prev) => [...prev, errMsg]);
       } finally {
@@ -174,6 +196,7 @@ const Chatbot = () => {
       {/* ── FAB Button ──────────────────────────────────── */}
       <button
         id="chatbot-fab"
+        aria-label={isOpen ? "Close AI assistant" : "Open AI assistant"}
         onClick={() => setIsOpen((o) => !o)}
         className="fixed z-50 flex items-center justify-center transition-all duration-300 group"
         style={{
@@ -404,6 +427,7 @@ const Chatbot = () => {
                 id="chatbot-input"
                 type="text"
                 value={input}
+                maxLength={MAX_CLIENT_MESSAGE_LENGTH}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleKeyDown}
                 placeholder="Ask about network security…"
