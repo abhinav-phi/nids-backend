@@ -1,688 +1,502 @@
-<div align="center">
+# The Sentinel — Network Intrusion Detection System
 
-# 🛡️ The Sentinel — Network Intrusion Detection System
-
-**A production-grade, ML-powered NIDS with real-time packet capture, SHAP explainability, and a live threat intelligence dashboard.**
+> A real-time, ML-powered NIDS: captures network traffic, reconstructs flows, classifies threats from the CICIDS2017 taxonomy, explains every detection with SHAP, and streams alerts to a live React command-center dashboard.
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)](https://python.org)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.110-009688?logo=fastapi)](https://fastapi.tiangolo.com)
 [![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)](https://typescriptlang.org)
-[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.4-F7931E?logo=scikitlearn)](https://scikit-learn.org)
-[![XGBoost](https://img.shields.io/badge/XGBoost-2.0-blue)](https://xgboost.readthedocs.io)
+[![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite)](https://vite.dev)
+[![scikit-learn](https://img.shields.io/badge/scikit--learn-1.4-F7931E?logo=scikit-learn)](https://scikit-learn.org)
+[![LightGBM](https://img.shields.io/badge/LightGBM-deployed-00A65A)](https://lightgbm.readthedocs.io)
+[![SHAP](https://img.shields.io/badge/SHAP-0.45-FF6F00?logo=shap)](https://shap.readthedocs.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-</div>
+**[Documentation](#documentation) · [API Reference](#api-reference) · [Running Tests](#running-tests)**
 
 ---
 
-## 📌 What is This?
+## Table of Contents
 
-**The Sentinel** is a complete, end-to-end Network Intrusion Detection System that:
-
-- **Captures live network packets** using Scapy and assembles them into bidirectional flows
-- **Extracts 52 CICIDS2017-compatible features** per flow (IATs, packet lengths, TCP flags, etc.)
-- **Classifies flows** using an ML ensemble (9 models trained, best saved automatically)
-- **Explains every prediction** using SHAP values — top 5 most influential features per alert
-- **Streams alerts in real time** to a React dashboard via WebSocket
-- **Simulates attack traffic** for demo and testing without a real adversary
-
-Built for hackathons, research, and production prototyping. No black box — every prediction is explainable.
-
----
-
-## 🏗️ System Architecture
-
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                         LIVE NETWORK                             │
-│                   (Wi-Fi / Ethernet traffic)                     │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │  Raw packets
-                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                    NetworkSniffer  (Scapy)                       │
-│  • Captures IP/TCP/UDP/ICMP packets on auto-detected interface   │
-│  • Groups packets into flows via 5-tuple key                     │
-│    (src_ip, dst_ip, src_port, dst_port, protocol)                │
-│  • Closes flows on TCP FIN/RST or after 30s timeout              │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │  Flow packet dicts
-                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                 FlowExtractor  (CICIDS2017)                      │
-│  • Computes 52 exact CICIDS2017 features per flow                │
-│  • Statistical: packet length mean/std/min/max                   │
-│  • Temporal: IATs, flow duration, active/idle periods            │
-│  • Protocol: TCP flags (FIN/PSH/ACK), window sizes               │
-│  • Rates: Flow Bytes/s, Flow Packets/s, Fwd/Bwd Packets/s        │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │  Feature dict (52 keys)
-                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                FastAPI Backend  (port 8000)                      │
-│                                                                  │
-│  POST /api/predict ──► StandardScaler ──► ML Model              │
-│                                     ├──► SHAP TreeExplainer      │
-│                                     └──► SQLite / PostgreSQL DB  │
-│                                                                  │
-│  GET  /api/stats          — Total flows, attack counts by type   │
-│  GET  /api/alerts         — Paginated alert history              │
-│  GET  /api/ip-leaderboard — Top attacker IPs                     │
-│  WS   /ws/live            — Real-time alert stream               │
-│  POST /api/sniffer/start  — Start packet capture                 │
-│  POST /api/sniffer/stop   — Stop packet capture                  │
-│  GET  /health             — System health (DB, model, sniffer)   │
-└──────────────────────┬───────────────────────────────────────────┘
-                       │  WebSocket / REST
-                       ▼
-┌──────────────────────────────────────────────────────────────────┐
-│              React Dashboard  (port 5173)                        │
-│                                                                  │
-│  • KPI Cards — total flows, attacks, detection rate, uptime      │
-│  • Live Traffic Chart — alerts per minute over time              │
-│  • Attack Pie Chart — distribution by attack type                │
-│  • Alert Feed — scrollable list of real-time alerts              │
-│  • IP Leaderboard — top source IPs by attack count               │
-│  • Attack Timeline — temporal heat map of attack events          │
-│  • SHAP Explainer — per-alert feature importance bars            │
-└──────────────────────────────────────────────────────────────────┘
-```
+- [About](#about)
+- [Features](#features)
+- [Tech Stack](#tech-stack)
+- [Architecture](#architecture)
+- [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+  - [Environment Variables](#environment-variables)
+- [Usage](#usage)
+- [Dashboard](#dashboard)
+- [ML Pipeline](#ml-pipeline)
+- [Detection Classes](#detection-classes)
+- [Feature Extraction](#feature-extraction)
+- [API Reference](#api-reference)
+- [Running Tests](#running-tests)
+- [Security](#security)
+- [Project Structure](#project-structure)
+- [Limitations](#limitations)
+- [Roadmap](#roadmap)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
+- [Acknowledgements](#acknowledgements)
 
 ---
 
-## 🧠 ML Pipeline
+## About
 
-### Dataset
-The model is trained on the **CICIDS2017** dataset — a widely used benchmark containing normal traffic and 14 attack categories including DDoS, DoS, PortScan, Brute Force, Bot, and Web Attacks.
+Most intrusion detection falls into two camps: signature-based systems that miss novel attacks, and black-box ML systems that flag traffic without explaining why. The Sentinel is designed to be neither. It captures packets live, reassembles them into bidirectional flows, extracts the same 52 features used by the CICIDS2017 benchmark, and classifies each flow with a deployed machine-learning model — then explains every detection with SHAP feature contributions and maps it to an operational severity level.
 
-### Training Pipeline (`src/model/train.py`)
+The system is end-to-end: a Scapy-based sniffer feeds a FastAPI backend, predictions are persisted to SQLite, and attack alerts stream to a React dashboard over WebSocket in real time. Because every alert carries its top contributing features, an analyst can see *why* a flow was flagged, not just that it was flagged.
 
-| Step | Description |
-|------|-------------|
-| **A. Load** | Reads all CSVs from `data/raw/` (up to **400,000 rows** via `load_data(RAW_DIR, n_samples=400_000)`) |
-| **B. Clean** | Removes NaN, Inf, and duplicate rows |
-| **C. Feature Engineering** | Adds 7 domain-specific ratio features (flow bytes/packet, fwd/bwd ratios, IAT jitter, etc.) |
-| **D. Split** | Separates features and label column (`Attack Type`) |
-| **E. Encode** | `LabelEncoder` → numeric class indices, saved as `label_encoder.pkl` |
-| **F. Stratified Split** | 80/20 train/test with `stratify=y` |
-| **G. Class Balancing** | SMOTE disabled (`USE_SMOTE = False`); class imbalance handled natively via `class_weight="balanced"` on supported classifiers |
-| **H. Dual Scalers** | Fits `StandardScaler` **and** `RobustScaler`; best scaler saved as `scaler.pkl` |
-| **I. PCA Analysis** | Experimental comparison at 90/95/99% variance (not used in production) |
-| **J. Train 9 Models** | See table below |
-| **K. Cross-Validation** | 5-fold stratified CV on top 2 models, run on the **full** standard-scaled training dataset (`X_tr_std`) |
-| **L. Compare** | Sorted leaderboard by Macro F1 |
-| **M. Save Best** | Best model saved as `model.pkl` |
+It is aimed at security students, researchers, and demo teams who need a self-contained platform — capture, detection, explanation, visualization, and attack simulation all running on a single machine without a real adversary. Scripted attack simulators (DDoS, port scan, brute force) let you validate the whole pipeline safely on loopback. A Gemini-powered chat assistant can answer natural-language questions about the live alert data.
 
-### Model Suite (9 Classifiers)
+> The bundled `nids.db` already contains roughly 2,000 labeled flows from demo runs, so the dashboard shows real data the moment the backend starts.
 
-| # | Model | Search Strategy | Notes |
-|---|-------|----------------|-------|
-| 1 | Logistic Regression | Fixed params | Baseline; `class_weight="balanced"` |
-| 2 | Decision Tree | GridSearchCV | `max_depth`, `criterion`; `class_weight="balanced"` (both Standard & Robust scaler instances) |
-| 3 | Random Forest | RandomizedSearchCV | `n_estimators`, `max_features`; `class_weight="balanced"` (both Standard & Robust scaler instances) |
-| 4 | XGBoost | RandomizedSearchCV | `learning_rate`, `subsample` |
-| 5 | LightGBM | Fixed params | Standard dependency (no longer optional fallback) |
-| 6 | SVM (RBF kernel) | Fixed params | Deterministic first-15k slice (`X_tr_std[:15000]`); no CV; `class_weight="balanced"` |
-| 7 | **Neural Network (MLP)** | Fixed params | `256→128→64` ReLU, Adam, early stopping |
-| 8 | Voting Ensemble | Soft voting | RF + XGB + LGBM/MLP |
-| 9 | Stacking Ensemble | LR meta-learner | RF + XGB + LGBM/MLP → LR |
+---
 
-Both **StandardScaler** and **RobustScaler** are compared for tree models. RobustScaler handles DDoS-induced outliers (e.g. 10⁶ pkt/s) better because it uses median and IQR instead of mean/std.
+## Features
 
-### Neural Network Architecture
-```
-Input (52 features)
-       │
-   Dense(256, relu)
-       │
-   Dense(128, relu)
-       │
-    Dense(64, relu)
-       │
-   Dense(n_classes, softmax)
+- **Real-time network monitoring** — live packet capture with Scapy, automatic interface detection (Npcap-aware on Windows), and bidirectional flow assembly using a 5-tuple key `(src_ip, dst_ip, src_port, dst_port, protocol)`.
+- **ML-based classification** — production inference against the deployed LightGBM artifact, with `predict_proba` confidence.
+- **CICIDS-compatible features** — exactly 52 flow-level features matching the CICIDS2017 schema (packet statistics, rates, inter-arrival times, TCP flags, window sizes, active/idle periods).
+- **Explainable detection** — cached SHAP `TreeExplainer` returns the top-5 contributing features for every non-benign alert, with signed values.
+- **Severity classification** — CRITICAL / HIGH / MEDIUM / LOW / NONE derived from the predicted class via a curated mapping.
+- **Live alert streaming** — FastAPI WebSockets push attack alerts to every connected dashboard within milliseconds of inference.
+- **Security dashboard** — KPI cards, live traffic chart, attack-distribution pie, alert feed, attacker leaderboard, and a 12-hour attack timeline.
+- **Alert archive** — paginated, filterable, searchable historical alerts with one-click CSV export.
+- **Network activity view** — real source-to-destination flow aggregation built from the stored alert data.
+- **SHAP explainability page** — pick any alert and inspect its feature contributions, with deep links.
+- **System status page** — backend health, deployed-model manifest, sniffer counters, and security flags.
+- **AI assistant** — LangChain + Google Gemini chatbot grounded in the alerts database (requires a Gemini API key).
+- **Attack simulation** — DDoS, port-scan, and brute-force generators, plus a mixed scenario runner, for safe demos on local targets.
+- **Dataset replay** — `send_attacks.py` replays balanced attack samples from the CICIDS2017 CSV through the live API.
+- **Automated tests** — 32 backend tests (pytest) and 17 frontend specs (vitest + Testing Library).
 
-Optimizer: Adam (lr=1e-3, adaptive)
-L2 Reg:    α = 1e-4
-Batch:     512
-Early Stop: 15 no-improve epochs on 10% validation split
+---
+
+## Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React 18, TypeScript, Vite 7, Tailwind CSS + shadcn/ui, Recharts, TanStack Query, React Router, Axios |
+| Backend | Python 3.10+, FastAPI 0.110, SQLAlchemy 2.0, Uvicorn, Scapy 2.5 |
+| ML / data | scikit-learn 1.4, LightGBM (deployed model), XGBoost, SHAP 0.45, joblib, imbalanced-learn, pandas, NumPy |
+| Database | SQLite (default, zero-config) · PostgreSQL supported via `DATABASE_URL` (exercised only in config) |
+| AI assistant | LangChain + Google Gemini (`gemini-2.5-flash` by default) |
+| Testing | pytest + httpx (backend) · vitest + Testing Library + jsdom (frontend) |
+
+---
+
+## Architecture
+
+```mermaid
+flowchart TD
+    subgraph Live pipeline
+        A[Live network traffic] --> B[Scapy sniffer<br/>flow assembly]
+        B --> C[FlowExtractor<br/>52 CICIDS2017 features]
+        C --> D[FastAPI POST /api/predict]
+        D --> E[StandardScaler]
+        E --> F[Deployed LightGBM model<br/>7 classes]
+        F --> G[Confidence + severity]
+        F --> H[SHAP top-5 explanation]
+        G --> I[(SQLite alerts)]
+        H --> I
+        I --> J[WebSocket /ws/live]
+        J --> K[React dashboard<br/>localhost:5173]
+    end
+
+    subgraph Offline training
+        L[(CICIDS2017 dataset)] --> M[train.py<br/>9-model comparison by Macro F1]
+        M --> N[Best model artifact]
+        N --> P[model.pkl + scaler.pkl<br/>+ label_encoder.pkl + manifest.json]
+        P --> D
+    end
 ```
 
-### SHAP Explainability
-A `TreeExplainer` is cached once at server startup. For every non-benign prediction, the top 5 features by absolute SHAP value are returned alongside the prediction. The React `SHAPExplainer` component visualizes these as a horizontal bar chart per alert.
+**Live path:** packets captured on an interface are grouped into flows; completed flows are converted to 52 features and POSTed to `/api/predict`. The backend scales the vector, classifies it, computes confidence and severity, explains it with SHAP, persists an alert row, and — if it is an attack — pushes it to all dashboards over WebSocket.
+
+**Offline path:** `src/model/train.py` trains and compares 9 model families on the cleaned CICIDS2017 dataset and saves the best-by-Macro-F1 artifact, which the running API loads lazily at startup.
 
 ---
 
-## 🌐 Feature Engineering
-
-The `FlowExtractor` (`src/features/extractor.py`) converts raw Scapy packet dicts into the exact **52-feature CICIDS2017 vector** expected by the model.
-
-### Feature Categories
-
-| Category | Features |
-|----------|---------|
-| **Basic** | Destination Port, Flow Duration, Total Fwd/Bwd Packets |
-| **Packet Length** | Fwd/Bwd Packet Length (Max, Min, Mean, Std), Min/Max/Mean/Std/Variance overall |
-| **Flow Rates** | Flow Bytes/s, Flow Packets/s, Fwd Packets/s, Bwd Packets/s |
-| **IAT (Inter-Arrival Time)** | Flow IAT (Mean/Std/Max/Min), Fwd IAT (Total/Mean/Std/Max/Min), Bwd IAT (same) |
-| **Headers** | Fwd Header Length, Bwd Header Length |
-| **TCP Flags** | FIN Flag Count, PSH Flag Count, ACK Flag Count |
-| **Window / Segment** | Init_Win_bytes_forward, Init_Win_bytes_backward, min_seg_size_forward |
-| **Subflow** | Subflow Fwd Bytes, act_data_pkt_fwd, Average Packet Size |
-| **Active / Idle** | Active Mean/Max/Min, Idle Mean/Max/Min |
-
-IATs are computed in **microseconds** (matching CICIDS2017 scale). Active/Idle periods are classified by a 5-second inter-packet gap threshold.
-
----
-
-## 🔄 Real-Time Data Flow
-
-```
-1. NetworkSniffer captures packet on interface 'eth0' / 'Wi-Fi'
-         ↓
-2. Packet parsed → 12-field dict (src_ip, dst_ip, ports, protocol,
-   size, payload_len, header_len, time, tcp_flags, window_size, ttl)
-         ↓
-3. Packet added to flow bucket (keyed by 5-tuple)
-   Flow closes on: TCP FIN/RST | 30s timeout | 500-packet cap
-         ↓
-4. FlowExtractor.extract_from_dicts() → {52 CICIDS features}
-         ↓
-5. POST http://localhost:8000/api/predict (non-blocking thread)
-         ↓
-6. Backend:
-   a. Strips metadata (_source_ip, _dst_port, ...)
-   b. Scales 52 features with StandardScaler
-   c. model.predict() → class index
-   d. model.predict_proba() → confidence score
-   e. LabelEncoder.inverse_transform() → human-readable label
-   f. SHAP TreeExplainer → top-5 feature importances
-   g. Severity mapping (CRITICAL/HIGH/MEDIUM/LOW/NONE)
-   h. Saves Alert to database
-   i. If not BENIGN → broadcast via WebSocket
-         ↓
-7. Dashboard WebSocket client receives alert JSON
-   → Updates KPICards, AlertFeed, TrafficChart, PieChart in real-time
-```
-
----
-
-## 🖥️ Frontend Dashboard
-
-Built with **React 18 + TypeScript + Vite + Tailwind CSS + shadcn/ui + Recharts**.
-
-| Component | Description |
-|-----------|-------------|
-| `StatusBar` | WS connection indicator, live clock, system status |
-| `KPICards` | Total flows, attacks detected, detection rate, uptime |
-| `TrafficChart` | Recharts `LineChart` — attacks per minute, last 30 points |
-| `AttackPieChart` | Recharts `PieChart` — attack type distribution |
-| `AlertFeed` | Real-time scrollable alert list with severity color coding |
-| `IPLeaderboard` | Top 10 most aggressive source IPs |
-| `AttackTimeline` | Temporal bar chart of attack events over time |
-| `SHAPExplainer` | Per-alert SHAP feature importance bar chart |
-| `Sidebar` | Navigation rail with system overview |
-
-### WebSocket Hook (`useWebSocket.ts`)
-- Connects to `ws://localhost:8000/ws/live`
-- On connect: receives batch of last 50 alerts for history seeding
-- Auto-reconnects on disconnect (3s delay)
-- Normalizes both new (`value`) and legacy (`impact`) SHAP field names
-
----
-
-## 🔌 REST API Reference
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/predict` | Submit a 52-feature flow dict for classification |
-| `GET` | `/api/alerts` | Paginated alert history |
-| `GET` | `/api/stats` | Total flows, attacks by type/severity, uptime |
-| `GET` | `/api/ip-leaderboard` | Top N attacker IPs |
-| `POST` | `/api/sniffer/start` | Start live packet capture |
-| `POST` | `/api/sniffer/stop` | Stop live packet capture |
-| `GET` | `/api/sniffer/stats` | Sniffer stats (packets, flows, alerts) |
-| `GET` | `/health` | System health (DB, model, sniffer, WS clients) |
-| `WS` | `/ws/live` | Real-time alert stream (WebSocket) |
-
-Interactive API docs: [http://localhost:8000/docs](http://localhost:8000/docs)
-
----
-
-## 🚀 Quick Start
+## Getting Started
 
 ### Prerequisites
 
-| Tool | Version | Purpose |
-|------|---------|---------|
-| Python | 3.10+ | Backend & ML |
-| Node.js | 18+ | Frontend |
-| [Npcap](https://npcap.com) | Latest | Packet capture on Windows |
-| Git | Any | Clone repo |
+- **Python 3.10+** (developed and tested on 3.11)
+- **Node.js 20+** — Vite 7 requires a recent Node release; npm comes with it
+- **Packet capture privileges** — the sniffer and simulators need admin/root rights to send and receive raw packets; on Windows, Scapy requires **Npcap** (auto-detected, with a Layer-3 fallback when missing)
+- **Google Gemini API key** — only if you want to use the chatbot (`/api/chat` returns 503 without it)
+- No Docker, no external database, no internet connection needed for the core pipeline
 
-> **Windows note:** Install Npcap with "WinPcap API-compatible mode" enabled. Run the backend as Administrator for packet capture.
+### Installation
 
----
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/yourusername/nids.git
-cd nids
-```
-
----
-
-### 2. Backend Setup
+**Backend**
 
 ```bash
 cd nids-backend
+python -m venv .venv
 
-# Create a virtual environment (recommended)
-python -m venv venv
+# Windows
+.\.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
 
-# Activate it
-# Windows:
-venv\Scripts\activate
-# Linux/Mac:
-source venv/bin/activate
-
-# Install all dependencies
 pip install -r requirements.txt
 ```
 
-**Optional — PostgreSQL:**
-Create a `.env` file if you want to use PostgreSQL instead of the default SQLite:
-```env
-DATABASE_URL=postgresql://nids:password@localhost:5432/nids_db
-```
-
----
-
-### 3. Train the ML Model
-
-Download the CICIDS2017 dataset CSVs and place them in `nids-backend/data/raw/`.
-
-> The dataset can be obtained from [https://www.unb.ca/cic/datasets/ids-2017.html](https://www.unb.ca/cic/datasets/ids-2017.html). Place CSV files directly in `data/raw/`.
+Optional sanity check of the shipped ML artifacts (also writes `manifest.json`):
 
 ```bash
-# From inside nids-backend/
-python src/model/train.py
+python check.py
 ```
 
-This will:
-1. Load and clean the CSV data (up to 400,000 samples)
-2. Engineer 7 additional ratio features
-3. Handle class imbalance natively via `class_weight="balanced"` (SMOTE disabled)
-4. Train and compare 9 ML models (takes ~10–30 minutes depending on hardware)
-5. Save the best model, scaler, and label encoder:
-   - `nids-backend/model.pkl`
-   - `nids-backend/scaler.pkl`
-   - `nids-backend/label_encoder.pkl`
-
-> **Shortcut:** If you have pre-trained artifacts, place them in `nids-backend/` and skip this step.
-
----
-
-### 4. Start the Backend Server
-
-```bash
-# From inside nids-backend/
-# Standard mode (no auto-start of packet capture):
-uvicorn src.api.main:app --reload --port 8000
-
-# With automatic packet capture on startup:
-set NIDS_CAPTURE=1   # Windows
-uvicorn src.api.main:app --port 8000
-```
-
-Verify it's running:
-```bash
-curl http://localhost:8000/health
-```
-
-Expected response:
-```json
-{
-  "status": "ok",
-  "db": "ok",
-  "model": "ok",
-  "sniffer": "stopped",
-  "uptime_seconds": 3.2,
-  "ws_clients": 0
-}
-```
-
----
-
-### 5. Start the Frontend
+**Frontend**
 
 ```bash
 cd nids-frontend
 npm install
-npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173) in your browser.
+### Environment Variables
+
+Copy `nids-backend/.env.example` to `nids-backend/.env` and set values as needed:
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `GOOGLE_API_KEY` | only for chatbot | — | Gemini API key used by `/api/chat` |
+| `GEMINI_MODEL` | no | `gemini-2.5-flash` | Gemini model name for the chatbot |
+| `DATABASE_URL` | no | `sqlite:///./nids.db` | SQLAlchemy connection string (PostgreSQL supported in config) |
+| `NIDS_API_SECRET` | no | empty | If set, all `/api/*` requests must send `X-API-Key: <value>` |
+| `NIDS_RATE_LIMIT` | no | `120` | Per-IP request limit per minute (HTTP 429 beyond) |
+| `NIDS_CAPTURE` | no | `0` | `1`/`true`/`yes` auto-starts the sniffer at backend startup |
+
+```env
+GOOGLE_API_KEY=your_key_here
+```
+
+> Never commit a real `.env` — it is gitignored, as are model artifacts (`*.pkl`), databases (`*.db`), raw data (`data/`), and demo reports.
 
 ---
 
-### 6. Start Packet Capture (Live Mode)
+## Usage
 
-**Option A — Via the API:**
-```bash
-curl -X POST http://localhost:8000/api/sniffer/start
-```
+### Minimal happy path
 
-**Option B — Environment variable** (set `NIDS_CAPTURE=1` before starting the server, see Step 4).
+1. **Terminal 1 — backend**
 
-**Option C — Standalone sniffer:**
-```bash
-# From inside nids-backend/
-python src/capture/sniffer.py --interface auto
-```
+   ```bash
+   cd nids-backend
+   .\.venv\Scripts\activate        # or: source .venv/bin/activate
+   uvicorn src.api.main:app --reload --port 8000
+   ```
 
----
+2. **Terminal 2 — frontend**
 
-## 🎭 Attack Simulation (Demo Mode)
+   ```bash
+   cd nids-frontend
+   npm run dev
+   ```
+   Open `http://localhost:5173` — the dashboard starts showing data immediately (the bundled demo database already contains ~2,000 flows).
 
-No real adversary? Use the built-in simulators to generate attack traffic for demonstration.
+3. **Verify the API** — `http://localhost:8000/health` should return `{"status": "ok", "db": "ok", "model": "ok", ...}`. Interactive docs live at `http://localhost:8000/docs`.
+
+4. **Start live capture** (admin/root shell; Npcap on Windows)
+
+   ```bash
+   cd nids-backend
+   python src/capture/sniffer.py --interface auto
+   ```
+   or via the API: `POST /api/sniffer/start` (optionally `{"interface": "Wi-Fi"}`).
+
+5. **Generate controlled attack traffic** (second admin/root shell; targets loopback by default)
+
+   ```bash
+   cd nids-backend
+   python src/simulation/sim_mixed.py          # DDoS → port scan → SSH brute force in sequence
+   # individual generators:
+   python src/simulation/sim_ddos.py
+   python src/simulation/sim_portscan.py
+   python src/simulation/sim_bruteforce.py
+   ```
+
+6. **Watch it work** — within seconds the alert feed lights up with DDoS / Port Scanning / Brute Force alerts; open `/explain` to inspect SHAP explanations, `/network` for source-destination aggregation, `/reports` for attack distribution, and `/settings` for live system status.
+
+### Offline replay (no raw sockets needed)
+
+If `nids-backend/data/raw/cicids2017_cleaned.csv` is present, replay balanced attack samples straight into the API:
 
 ```bash
 cd nids-backend
-
-# Simulate a DDoS UDP flood (300 packets, ~1000 pps)
-python src/simulation/sim_ddos.py --target 127.0.0.1 --count 300
-
-# Simulate a port scan
-python src/simulation/sim_portscan.py --target 127.0.0.1
-
-# Simulate a brute force attack
-python src/simulation/sim_bruteforce.py --target 127.0.0.1
-
-# Simulate a mixed attack scenario
-python src/simulation/sim_mixed.py
+python send_attacks.py
 ```
 
-The sniffer will pick up the generated packets, extract features, and send them to the prediction API — alerts will appear on the dashboard in real time.
+Keep replay runs rate-bounded — every row is persisted to the database.
 
 ---
 
-## 🧪 Running Tests
+## Dashboard
+
+The frontend is a routed React app (no placeholder tabs). Every page has explicit loading, empty, and error states.
+
+| Route | Page | Contents |
+|---|---|---|
+| `/` | Dashboard | KPI cards (flows, attacks, uptime, benign traffic), live traffic chart, attack-type pie, live alert feed, attacker leaderboard, 12-hour attack timeline |
+| `/alerts` | Alert archive | Paginated, filterable (type / severity / free text), searchable history with CSV export of the current view |
+| `/reports` | Reports | Attack distribution, leaderboard, and timeline in a consolidated view |
+| `/network` | Network activity | Real source-to-destination flow aggregation (counts, volume bars, attack types, max severity) from the latest 500 alerts |
+| `/explain` | Explainability | Alert picker + SHAP top-5 bars per alert; deep links via `?src=&t=` |
+| `/settings` | System status | Backend health, deployed-model manifest, sniffer counters (incl. retries/dropped), security flags — live refresh |
+
+The floating **Sentinel AI** chatbot answers natural-language questions about stats, top attackers, and recent alerts; chat responses are sanitized (HTML-escaped before rendering) and input is capped at 2000 characters.
+
+---
+
+## ML Pipeline
+
+**Dataset** — The deployed model is trained on the **CICIDS2017** cleaned dataset (`2,520,751 rows × 53 columns`, label column `Attack Type`, consolidated into 7 classes). The raw CSV stays in `nids-backend/data/raw/` (gitignored).
+
+**Training** (`python src/model/train.py`):
+
+1. Chunked, per-class stratified loading (targets ~400,000 rows).
+2. Cleaning: inf → NaN, drop NaN, drop duplicates.
+3. Optional 7 engineered ratio features — **comparison only**, never used in production (inference/SHAP consistency is kept on the 52-feature contract).
+4. Label encoding → `label_encoder.pkl`; stratified 80/20 train/test split (`random_state=42`), holdout arrays persisted to `data/processed/`.
+5. Dual scalers fit on training data — StandardScaler and RobustScaler; production inference uses the StandardScaler (`scaler.pkl`).
+6. Class imbalance handled with `class_weight="balanced"` (SMOTE present but disabled).
+7. PCA experiment at 90/95/99% variance — **evaluated, deliberately not deployed** (SHAP needs original features).
+8. **9-model comparison**: Logistic Regression, Decision Tree (grid search), Random Forest (randomized search), XGBoost, LightGBM, SVM-RBF (15k subset), MLP neural net, Voting ensemble, Stacking ensemble — ranked by **Macro F1** (5-fold stratified CV on the top 2).
+9. Best model auto-saved to `model.pkl`; `python check.py` verifies artifact consistency and writes a machine-readable `manifest.json`.
+
+**Deployed artifact** (verified `manifest.json`): `LGBMClassifier` trained on **52 features** with a `LabelEncoder` over **7 classes** and 21 severity-map keys. SHAP inference runs through a cached `TreeExplainer`.
+
+> Exact benchmark metrics of the saved artifact are not embedded in the repository. Regenerate them by running the training and evaluation pipeline (`train.py`, `evaluate.py`, notebooks).
+
+---
+
+## Detection Classes
+
+The deployed model outputs exactly these 7 classes (from `label_encoder.pkl` / `manifest.json`):
+
+| Class | Typical severity |
+|---|---|
+| `Normal Traffic` | NONE |
+| `Bots` | HIGH |
+| `Brute Force` | LOW |
+| `DDoS` | CRITICAL |
+| `DoS` | CRITICAL |
+| `Port Scanning` | MEDIUM |
+| `Web Attacks` | MEDIUM |
+
+Severity is assigned by lowercase substring rules in `src/model/predict.py` (`SEVERITY_MAP`); unmatched predictions fall back to LOW. Richer CICIDS2017 labels (e.g., FTP-Patator, SSH-Patator, DoS Hulk, Infiltration, Heartbleed) exist in the dataset taxonomy and remain covered by the severity map, but they are **not** independently predicted by the deployed artifact.
+
+> **Benign semantics:** the model's benign class is `Normal Traffic`, not `"BENIGN"`. All stats, feeds, and broadcast logic share one constant — `BENIGN_LABELS = ("Normal Traffic", "BENIGN")` in `src/api/constants.py` — so the two spellings can never again be miscounted (this was a fixed historical bug).
+
+---
+
+## Feature Extraction
+
+`FlowExtractor` (`src/features/extractor.py`) converts a flow's packet list into the exact 52-key, CICIDS2017-named vector the model expects, in fixed order:
+
+- **Packet statistics** — min/max/mean/std/variance of packet lengths, average packet size, per-direction totals
+- **Flow rates** — bytes/s and packets/s, forward/backward packet rates (zero-duration protected)
+- **Temporal features** — flow duration, IATs (mean/std/max/min for flow and per direction) in microseconds
+- **Protocol features** — TCP flag counts (FIN/PSH/ACK), header lengths, initial window sizes, active/idle periods via a 5-second activity threshold
+- **Guarantees** — NaN/Inf always coerced to `0.0`; the 52-name list in one place (`CICIDS_FEATURES`) with runtime parity guards against the model's `n_features_in_`
+
+---
+
+## API Reference
+
+REST base: `http://localhost:8000`. Interactive docs: `http://localhost:8000/docs` (OpenAPI).
+
+| Method | Endpoint | Purpose | Auth |
+|---|---|---|---|
+| POST | `/api/predict` | Classify one flow. Body: flat JSON with the 52 CICIDS feature names (+ optional `_source_ip`, `_destination_ip`, `_src_port`, `_dst_port` metadata). Returns prediction, confidence, severity, SHAP top-5, alert id. Strict validation: 400 if no feature keys; 422 if any value is non-numeric/non-finite/negative/>1e15 or more than 8 of 52 are missing (invalid features named) — no silent coercion; ports clamped to 0–65535 | `X-API-Key` if secret set |
+| GET | `/api/alerts` | Paginated alert history (`limit` 1–500, `offset`), filters: `type`, `severity`, `exclude_benign` (default true) | `X-API-Key` if secret set |
+| GET | `/api/stats` | `total_flows`, `total_attacks`, `benign_count`, `attacks_by_type`, `attacks_by_severity`, `uptime_seconds` | `X-API-Key` if secret set |
+| GET | `/api/ip-leaderboard` | Top N attacking source IPs by count, with last-seen (`limit`, default 10) | `X-API-Key` if secret set |
+| POST | `/api/chat` | Chat with Sentinel AI (`{message, history[]}`). 2000-char cap, 60 s LLM timeout, bounded history; 503 without `GOOGLE_API_KEY` | `X-API-Key` if secret set |
+| POST | `/api/sniffer/start` | Start packet capture (optional `interface`; `auto` detection) | `X-API-Key` if secret set |
+| POST | `/api/sniffer/stop` | Stop capture and return final counters | `X-API-Key` if secret set |
+| GET | `/api/sniffer/stats` | Interface + counters: packets, flows, API calls, alerts, retries, dropped | `X-API-Key` if secret set |
+| GET | `/api/system` | Aggregated status: health + model manifest + sniffer stats + rate limit + API-key/NIDS_CAPTURE flags (powers the Settings page) | `X-API-Key` if secret set |
+| GET | `/health` | Liveness: db, model, sniffer, uptime, WS client count | none |
+| | | | |
+
+**WebSocket — `ws://localhost:8000/ws/live`**
+
+On connect it sends the last 50 attack alerts as one JSON batch, then pushes new attack alerts in real time, with a ping every 10 seconds. Session cleanup is guaranteed (`finally`-closed), so dropped clients never leak database sessions.
+
+---
+
+## Running Tests
+
+**Backend** (from `nids-backend/`, venv active):
 
 ```bash
-cd nids-backend
-
-# Feature extraction sanity check
-python test_pipeline.py
-
-# API integration tests (requires server running)
-python test_api.py
-
-# ML prediction test
-python check.py
-
-# Run the full pytest suite
-pytest tests/
+python -m pytest tests/ -q
 ```
+
+32 tests, all passing — feature-extractor fixtures (normal / DDoS / port-scan), API tests via TestClient with a test SQLite DB, 52-feature-contract regression, benign-label (BENIGN_LABELS) regression, and DoS severity mapping. Integration scripts (`test_pipeline.py` in-process; `test_api.py`, `test2_api.py` against a live server) live at the backend root.
+
+**Frontend** (from `nids-frontend/`):
+
+```bash
+npm test          # vitest — 17 specs across 6 suites
+npm run lint      # ESLint
+npm run build     # type-check + production build (Vite)
+```
+
+Suites cover AlertFeed (rows, empty state, CSV export, links), AttackTimeline (real `bucketByHour` bucketing, no synthetic rows), Chatbot markdown sanitization, Sidebar (routes, real export, no placeholders), StatusBar health states, and the Settings page.
 
 ---
 
-## 📁 Project Structure
+## Security
 
-```
+Implemented:
+
+- **Optional API-key auth** — when `NIDS_API_SECRET` is set, every `/api/*` call must present `X-API-Key` (401 otherwise). Middleware-level, not user authentication.
+- **Rate limiting** — per-IP, configurable (`NIDS_RATE_LIMIT`, default 120/min, 429 beyond).
+- **Strict prediction validation** — malformed or incomplete feature vectors are rejected with named invalid features; nothing is silently coerced.
+- **Chatbot hardening** — 2000-char message cap (schema + route), 60 s LLM timeout, bounded history, system prompt that declines out-of-scope requests and never fabricates statistics.
+- **Output sanitization** — all chat/LLM HTML is escaped before markdown rendering (no raw HTML reaches the DOM).
+- **Secrets & artifacts** — `.env`, model artifacts (`*.pkl`), databases (`*.db`), raw data, and demo reports are gitignored.
+- **CORS** — restricted to the documented local dev origins (`localhost:3000/5173/8080/5174`). CORS is a browser policy, **not** authentication.
+- **Simulation safety** — all simulators default to loopback targets; they must never be pointed at external hosts.
+
+Remaining limitations are listed in [Limitations](#limitations).
+
+---
+
+## Project Structure
+
+```text
 nids/
+├── README.md                     ← you are here
+├── docs/
+│   ├── NIDS_PRD.md                   ← product requirements (what & why)
+│   ├── NIDS_TechSpec.md              ← technical specification (how)
+│   ├── NIDS_AppFlow.md               ← application flows, step by step
+│   ├── NIDS_Design.md                ← UI/UX design spec
+│   ├── NIDS_Schema.md                ← database schema & artifacts
+│   ├── NIDS_ImplementationPlan.md    ← build plan mapped to the repo
+│   ├── NIDS_Tracker.md               ← task tracker with status rollup
+│   └── NIDS_Rules.md                 ← development rules & standards
+│
 ├── nids-backend/
 │   ├── src/
-│   │   ├── api/
-│   │   │   ├── main.py          # FastAPI app, WebSocket, sniffer control
-│   │   │   ├── database.py      # SQLAlchemy engine + session factory
-│   │   │   ├── models.py        # Alert ORM model
-│   │   │   ├── schemas.py       # Pydantic request/response schemas
-│   │   │   └── routes/
-│   │   │       ├── predict.py   # POST /api/predict — ML inference endpoint
-│   │   │       ├── alerts.py    # GET /api/alerts — alert history
-│   │   │       └── stats.py     # GET /api/stats, /api/ip-leaderboard
-│   │   ├── capture/
-│   │   │   └── sniffer.py       # Live packet capture, flow assembly
-│   │   ├── features/
-│   │   │   └── extractor.py     # 52-feature CICIDS2017 extractor
-│   │   ├── model/
-│   │   │   ├── train.py         # Full ML training pipeline (9 models)
-│   │   │   ├── predict.py       # Inference wrapper + SHAP
-│   │   │   └── evaluate.py      # Model evaluation utilities
-│   │   └── simulation/
-│   │       ├── sim_ddos.py      # UDP DDoS flood simulator
-│   │       ├── sim_portscan.py  # Port scan simulator
-│   │       ├── sim_bruteforce.py# Brute force simulator
-│   │       └── sim_mixed.py     # Mixed attack scenario
-│   ├── notebooks/
-│   │   ├── 01_eda.ipynb         # Exploratory Data Analysis
-│   │   ├── 02_training.ipynb    # Training walkthrough
-│   │   └── 02_training_with_nn.ipynb # Neural Network training
-│   ├── model.pkl                # ← Trained model (generated by train.py)
-│   ├── scaler.pkl               # ← StandardScaler (generated by train.py)
-│   ├── label_encoder.pkl        # ← LabelEncoder (generated by train.py)
+│   │   ├── api/                  ← FastAPI app (main.py, routes/, models, schemas, constants)
+│   │   ├── capture/              ← Scapy sniffer (flow assembly, retries)
+│   │   ├── features/             ← 52-feature CICIDS2017 extractor
+│   │   ├── model/                ← train.py, predict.py, evaluate.py
+│   │   └── simulation/           ← sim_ddos / sim_portscan / sim_bruteforce / sim_mixed
+│   ├── data/                     ← raw dataset & processed holdouts (gitignored)
+│   ├── notebooks/                ← EDA + training notebooks
+│   ├── tests/                    ← pytest suite
+│   ├── model.pkl / scaler.pkl / label_encoder.pkl / manifest.json
+│   ├── nids.db                   ← runtime SQLite database
+│   ├── check.py · send_attacks.py
 │   └── requirements.txt
 │
 └── nids-frontend/
-    └── src/
-        ├── pages/
-        │   └── Index.tsx        # Main dashboard page layout
-        ├── components/
-        │   ├── StatusBar.tsx    # Connection & system status bar
-        │   ├── KPICards.tsx     # Key performance indicator cards
-        │   ├── TrafficChart.tsx # Live traffic line chart
-        │   ├── AttackPieChart.tsx # Attack type pie chart
-        │   ├── AlertFeed.tsx    # Real-time alert list
-        │   ├── IPLeaderboard.tsx# Top attacker IP table
-        │   ├── AttackTimeline.tsx # Temporal attack timeline
-        │   ├── SHAPExplainer.tsx # SHAP feature importance bars
-        │   └── Sidebar.tsx      # Navigation sidebar
-        └── hooks/
-            └── useWebSocket.ts  # WebSocket connection + alert normalization
+    ├── src/
+    │   ├── pages/                ← Index, Alerts, Reports, NetworkActivity, Explainability, Settings
+    │   ├── components/           ← charts, feed, sidebar, status bar, chatbot (+ __tests__)
+    │   ├── api/                  ← axios client
+    │   ├── hooks/                ← useWebSocket, etc.
+    │   └── test/                 ← vitest setup
+    └── package.json
 ```
 
 ---
 
-## 🛠️ Tech Stack
+## Limitations
 
-### Backend
-| Technology | Version | Role |
-|------------|---------|------|
-| **Python** | 3.10+ | Core language |
-| **FastAPI** | 0.110 | REST API + WebSocket server |
-| **Uvicorn** | 0.29 | ASGI web server |
-| **SQLAlchemy** | 2.0 | ORM + database layer |
-| **scikit-learn** | 1.4 | ML models, scalers, class weighting |
-| **XGBoost** | 2.0 | Gradient-boosted tree classifier |
-| **LightGBM** | 4.x | Fast gradient boosting |
-| **SHAP** | 0.45 | Model explainability |
-| **Scapy** | 2.5 | Live packet capture |
-| **pandas / numpy** | 2.2 / 1.26 | Data processing |
-| **matplotlib / seaborn** | — | Evaluation plots & notebook visualizations |
-| **requests** | — | API connection testing & sniffer scripts |
-| **SQLite / PostgreSQL** | — | Alert persistence |
-
-### Frontend
-| Technology | Version | Role |
-|------------|---------|------|
-| **React** | 18.3 | UI framework |
-| **TypeScript** | 5.8 | Type-safe JavaScript |
-| **Vite** | 7.3.2 | Build tool + dev server |
-| **Tailwind CSS** | 3.4 | Utility-first styling |
-| **shadcn/ui** | — | Accessible component primitives |
-| **Recharts** | 2.15 | Charts (line, pie, bar) |
-| **TanStack Query** | 5 | Server state management |
-| **React Router** | 6 | Client-side routing |
-| **Lucide React** | — | Icon library |
+- **No user authentication/authorization or TLS** — the optional `X-API-Key` and rate limiting are defence-in-depth, not full access control; the project is not a hardened public deployment.
+- **PostgreSQL is configurable but not exercised** — all repository evidence uses SQLite.
+- **No distributed streaming stack** — Redis/Kafka are listed in requirements but unused; in-memory flow tables + synchronous SQLite writes suit single-host demo/research scale.
+- **No live topology graph** — `/network` aggregates flows into tables; a graph visualization is future work.
+- **No Alembic migrations** — schema is created via `create_all()`; schema changes need manual DDL or a DB recreate.
+- **No Playwright E2E tests yet** — frontend coverage is unit-level (vitest).
+- **Exact saved-artifact benchmarks are unavailable** — regenerate via `train.py` / `evaluate.py` (see [ML Pipeline](#ml-pipeline)).
+- **Notebook nits** — EDA/training notebooks print `Label column: None` because they search for the literal `"label"` while the CSV uses `Attack Type` (production `train.py` handles this correctly); `evaluate.py` assumes benign class index 0 (class 0 is `Bots`) — offline-only, not in the production path.
+- **Operational**: the Gemini key in a local `.env` should be rotated; packet capture requires admin/root privileges.
 
 ---
 
-## ⚙️ Configuration
+## Roadmap
 
-### Backend Environment Variables
+**Completed**
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `DATABASE_URL` | `sqlite:///./nids.db` | Database connection string |
-| `NIDS_CAPTURE` | `0` | Set to `1` to auto-start sniffer on startup |
+- End-to-end pipeline: capture → extract → classify → explain → persist → stream → visualize
+- Benign-label alignment (`BENIGN_LABELS` single source of truth, HISTORICAL ISSUE-01 fixed)
+- Strict prediction validation, chatbot hardening, output sanitization
+- Sniffer delivery hardening (retry/backoff, drop counters), `GET /api/system`
+- Real settings page, network activity page, explainability page, alert archive with CSV export
+- Frontend test suites (17 specs) and document set synced to code
 
-### Key Constants (`sniffer.py`)
+**Future** (tracked in `docs/NIDS_Tracker.md`)
 
-| Constant | Default | Description |
-|----------|---------|-------------|
-| `FLOW_TIMEOUT_SECONDS` | `30` | Close inactive flows after N seconds |
-| `MAX_PACKETS_PER_FLOW` | `500` | Safety cap per flow before early processing |
-| `ACTIVE_TIMEOUT` | `5.0s` | IAT threshold for active/idle classification |
-
----
-
-## 🔍 Severity Classification
-
-| Level | Attack Types |
-|-------|-------------|
-| 🔴 **CRITICAL** | DDoS, DoS Hulk, DoS GoldenEye, DoS Slowloris, DoS SlowHTTPTest, Heartbleed |
-| 🟠 **HIGH** | Bot, FTP-Patator, SSH-Patator, Infiltration |
-| 🟡 **MEDIUM** | PortScan, Web Attack (Brute Force, XSS, SQL Injection) |
-| 🟢 **LOW** | Brute Force (generic), unknown attack types |
-| ⚪ **NONE** | BENIGN (normal traffic) |
+- Full authentication/authorization + TLS-terminated deployment
+- Live topology graph of aggregated flows
+- Alembic migrations (schema versioning)
+- Playwright E2E suites
+- FPR benign-index fix (`evaluate.py`, ISSUE-06)
+- Notebook label-detection cleanup (ISSUE-05)
+- Experiment/model registry (mlflow/optuna) and automated retraining
+- Stream-processing stack (Redis/Kafka) for larger deployments
 
 ---
 
-## 📊 Model Performance (Typical on CICIDS2017)
+## Documentation
 
-> Exact metrics will vary depending on the CSV files and sample sizes used. Run `python src/model/train.py` to reproduce.
+The repository ships an 8-document set kept in sync with the code — see the [Project Structure](#project-structure) tree for locations.
 
-| Model | Accuracy | Macro F1 | Notes |
-|-------|---------|---------|-------|
-| XGBoost | ~99%+ | ~97%+ | Usually best single model |
-| Random Forest | ~99% | ~96% | Very close to XGBoost |
-| Voting Ensemble | ~99%+ | ~97%+ | RF + XGB + LGBM |
-| Neural Network | ~98% | ~93% | 256→128→64 MLP |
-| Decision Tree | ~98% | ~90% | After GridSearchCV |
-| Logistic Regression | ~95% | ~75% | Baseline |
-| SVM (RBF) | ~97% | ~85% | 15k subset only |
+| Document | What it covers |
+|---|---|
+| [NIDS_PRD.md](docs/NIDS_PRD.md) | Product requirements: vision, scope, functional & non-functional requirements, known issues |
+| [NIDS_TechSpec.md](docs/NIDS_TechSpec.md) | Technical specification: stack, backend/frontend internals, API contract |
+| [NIDS_AppFlow.md](docs/NIDS_AppFlow.md) | Application flows: startup, capture, inference, WebSocket, dashboard, simulators |
+| [NIDS_Design.md](docs/NIDS_Design.md) | UI/UX design: layout, routes, components, styling system |
+| [NIDS_Schema.md](docs/NIDS_Schema.md) | Database schema, data dictionary, non-DB artifacts |
+| [NIDS_ImplementationPlan.md](docs/NIDS_ImplementationPlan.md) | Build plan (PH0–PH8) mapped to actual files |
+| [NIDS_Tracker.md](docs/NIDS_Tracker.md) | Task tracker with per-phase status rollup (93 items: 84 done, 3 partial, 6 future) |
+| [NIDS_Rules.md](docs/NIDS_Rules.md) | Development rules: security, data integrity, model governance, testing |
 
----
-
-## 🧩 Hackathon Demo Flow
-
-> Open **3 separate terminals**. Terminals 2 & 3 must be run as **Administrator**.
-
-### 1️⃣ Frontend — Terminal 1
-
-```bash
-cd nids-frontend
-npm install        # first time only
-npm run dev
-```
-Dashboard live at → [http://localhost:5173](http://localhost:5173) *(keep this terminal open)*
+Historical material: [NIDS_AuditReport.md](docs/NIDS_AuditReport.md) (previous audit; fixes shipped since), `NIDS_Mid_Report.pdf`, `NIDS_Final_Report.pdf`, `VIVA_GUIDE.md`. Those reports describe the past state of the project — this README and the 8 docs describe the current one.
 
 ---
 
-### 2️⃣ Backend — Terminal 2 (Admin)
+## Contributing
 
-```bash
-cd nids-backend
-venv\Scripts\activate          # first time: python -m venv venv
-pip install -r requirements.txt  # first time only
-uvicorn src.api.main:app --reload --port 8000
-```
-> Model is already trained — **do not re-run `train.py`**. *(keep this terminal open)*
-
----
-
-### 3️⃣ Trigger Attacks — Terminal 3 (Admin)
-
-```bash
-cd nids-backend
-
-# Start the packet sniffer
-curl -X POST http://localhost:8000/api/sniffer/start
-# Expected: { "running": true }
-
-# Send attack traffic
-python send_attacks.py
-```
-Live alerts will appear on the dashboard in real time.
+1. Fork the repository and create a branch for your work.
+2. Follow the existing layout (backend modules under `src/`, pages/components under `nids-frontend/src/`) — see `docs/NIDS_Rules.md` (COD-* rules).
+3. Validate before submitting:
+   - Backend: `python -m pytest tests/ -q`
+   - Frontend: `npm test`, `npm run lint`, `npm run build`
+4. Keep the documentation synchronized — every new feature gets a `NIDS-XXX-NN` ID in `docs/NIDS_PRD.md` and a `PHx-NN` task in `docs/NIDS_ImplementationPlan.md` + `docs/NIDS_Tracker.md`; tick tasks when done.
+5. Never commit secrets (`.env`, API keys), model artifacts, databases, or raw datasets — they are gitignored.
+6. No placeholder or synthetic data in production paths; demos belong in `src/simulation`.
 
 ---
 
-### 4️⃣ Changing Attack Type (`send_attacks.py`)
+## License
 
-Edit the `skiprows` value inside `send_attacks.py` to sample different attack traffic from the dataset:
-
-| Attack Type | `skiprows` value |
-|-------------|-----------------|
-| Brute Force | `500_000` |
-| DoS | `100_000` |
-| Port Scan | `2_000_000` |
-| DDoS / Web Attack | `1_500_000` |
+Distributed under the [MIT License](LICENSE). Copyright (c) 2026 Abhinav.
 
 ---
 
-### ⚠️ Important Notes
+## Acknowledgements
 
-- Place `send_attacks.py` inside the `nids-backend/` folder
-- Terminals 2 and 3 **must** be run in Administrator mode (packet capture requires elevated privileges)
-- **Do not close any terminal** while the demo is running
----
-
-## 🛡️ Security Notes
-
-- The sniffer requires **administrator / root privileges** to capture raw packets
-- On Windows, **Npcap** must be installed (download from [https://npcap.com](https://npcap.com))
-- CORS is configured for localhost dev servers; update `allow_origins` for production
-- The simulation scripts send real packets on your network — use `127.0.0.1` as target in demos
-
----
-
-## 📝 Changelog
-
-### Latest Changes
-
-#### ML Pipeline (`src/model/train.py`)
-
-**Class Imbalance Strategy**
-- SMOTE has been disabled (`USE_SMOTE = False`) to eliminate synthetic sample noise and excessive memory overhead during training
-- `class_weight="balanced"` introduced natively on `LogisticRegression`, `DecisionTreeClassifier` (both Standard and Robust Scaler `GridSearchCV` instances), `RandomForestClassifier` (both Standard and Robust Scaler `RandomizedSearchCV` instances), and `SVC`
-
-**SVM Optimization**
-- Replaced randomized sampling index with a deterministic first-15k slice (`X_tr_std[:15000], y_tr[:15000]`) for fully reproducible SVM runs
-- Cross-validation and Grid Search removed from SVM to keep its computational footprint minimal given its O(n²) complexity
-
-**Data Loading & Validation**
-- Base sample size increased to **400,000** (`load_data(RAW_DIR, n_samples=400_000)`) for a richer training distribution
-- `cross_validate_top()` now runs 5-Fold Stratified CV on the full standard-scaled dataset (`X_tr_std`) instead of a random 30k subsample, producing more robust evaluation metrics
-
-#### Dependencies
-
-**Backend (`requirements.txt`)**
-- Added `matplotlib` — used in evaluation scripts and notebooks
-- Added `seaborn` — used for notebook visualizations
-- Added `lightgbm` — promoted from optional fallback to standard required dependency
-- Added `requests` — used in API connection testing and sniffer scripts
-- Removed `imbalanced-learn` — no longer needed following SMOTE removal
-
-**Frontend (`package-lock.json`)**
-- `axios`: `1.13.6` → `1.15.0`
-- `proxy-from-env`: `1.1.0` → `2.1.0`
-- `lodash`: `4.17.23` → `1.18.1`
-- `vite`: `7.3.1` → `7.3.2`
-
----
-
-## 📄 License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
-
----
-
-<div align="center">
-
-Built with ❤️ for network security research and hackathon competition.
-
-**The Sentinel** — _See every packet. Understand every threat._
-
-</div>
+- **[CICIDS2017](https://www.unb.ca/cic/datasets/ids-2017.html)** — Canadian Institute for Cybersecurity benchmark dataset this project is trained on
+- **[LightGBM](https://lightgbm.readthedocs.io)** — deployed classifier
+- **[SHAP](https://shap.readthedocs.io)** — model explanations
+- **[scikit-learn](https://scikit-learn.org)** — training, scaling, evaluation
+- **[Scapy](https://scapy.net)** — packet capture and simulation
+- **[FastAPI](https://fastapi.tiangolo.com)** — API + WebSocket backend
+- **[React](https://react.dev), [Vite](https://vite.dev), [Tailwind CSS](https://tailwindcss.com), [shadcn/ui](https://ui.shadcn.com), [Recharts](https://recharts.org), [TanStack Query](https://tanstack.com/query)** — dashboard frontend
+- **[LangChain](https://www.langchain.com) + Google Gemini** — chat assistant
+- **[SQLAlchemy](https://www.sqlalchemy.org)** — persistence layer
