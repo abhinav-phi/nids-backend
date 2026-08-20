@@ -86,9 +86,9 @@ def _safe_var(lst: list) -> float:
     m = sum(lst) / len(lst)
     return sum((x - m) ** 2 for x in lst) / len(lst)
 def _safe_min(lst: list) -> float:
-    return min(lst) if lst else 0.0
+    return float(min(lst)) if lst else 0.0
 def _safe_max(lst: list) -> float:
-    return max(lst) if lst else 0.0
+    return float(max(lst)) if lst else 0.0
 def _compute_iats(timestamps: list) -> list:
     """Compute inter-arrival times from sorted timestamps."""
     if len(timestamps) < 2:
