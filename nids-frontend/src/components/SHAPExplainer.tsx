@@ -8,7 +8,7 @@ interface Props {
   onClose: () => void;
 }
 const SHAPExplainer = ({ alert, onClose }: Props) => {
-  const shapData = (alert.shap_top5 || []).map((s: any) => ({
+  const shapData = (alert.shap_top5 || []).map((s) => ({
     feature: s.feature,
     value:   s.value ?? s.impact ?? 0,
   }));
