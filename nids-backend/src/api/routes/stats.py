@@ -14,6 +14,7 @@ from sqlalchemy import func, desc
 from src.api.database import get_db
 from src.api.models import Alert
 from src.api.schemas import StatsResponse
+from src.api.constants import BENIGN_LABELS
 log = logging.getLogger(__name__)
 router = APIRouter()
 _start_time = time.time()
@@ -28,22 +29,23 @@ def get_stats(db: Session = Depends(get_db)):
     - system uptime in seconds
     """
     total_flows = db.query(func.count(Alert.id)).scalar() or 0
+    is_attack = Alert.prediction.notin_(BENIGN_LABELS)
     total_attacks = (
         db.query(func.count(Alert.id))
-        .filter(Alert.prediction != "BENIGN")
+        .filter(is_attack)
         .scalar() or 0
     )
     benign_count = total_flows - total_attacks
     type_rows = (
         db.query(Alert.prediction, func.count(Alert.id))
-        .filter(Alert.prediction != "BENIGN")
+        .filter(is_attack)
         .group_by(Alert.prediction)
         .all()
     )
     attacks_by_type = {row[0]: row[1] for row in type_rows}
     sev_rows = (
         db.query(Alert.severity, func.count(Alert.id))
-        .filter(Alert.prediction != "BENIGN")
+        .filter(is_attack)
         .group_by(Alert.severity)
         .all()
     )
@@ -71,7 +73,7 @@ def ip_leaderboard(
             func.count(Alert.id).label("attack_count"),
             func.max(Alert.timestamp).label("last_seen"),
         )
-        .filter(Alert.prediction != "BENIGN")
+        .filter(Alert.prediction.notin_(BENIGN_LABELS))
         .group_by(Alert.source_ip)
         .order_by(desc("attack_count"))
         .limit(limit)
