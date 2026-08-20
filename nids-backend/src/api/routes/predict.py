@@ -9,6 +9,7 @@ After running inference:
 """
 import json
 import logging
+import math
 from datetime import datetime
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -16,6 +17,8 @@ from sqlalchemy.orm import Session
 from src.api.database import get_db
 from src.api.models import Alert
 from src.api.schemas import PredictResponse, SHAPItem
+from src.features.extractor import CICIDS_FEATURES
+from src.model.predict import is_benign
 log = logging.getLogger(__name__)
 router = APIRouter()
 _predict_fn = None
@@ -28,60 +31,53 @@ def _get_predict():
         except Exception as e:
             log.warning(f"Could not load model: {e}")
     return _predict_fn
-EXPECTED_FEATURES = [
-    'Destination Port',
-    'Flow Duration',
-    'Total Fwd Packets',
-    'Total Length of Fwd Packets',
-    'Fwd Packet Length Max',
-    'Fwd Packet Length Min',
-    'Fwd Packet Length Mean',
-    'Fwd Packet Length Std',
-    'Bwd Packet Length Max',
-    'Bwd Packet Length Min',
-    'Bwd Packet Length Mean',
-    'Bwd Packet Length Std',
-    'Flow Bytes/s',
-    'Flow Packets/s',
-    'Flow IAT Mean',
-    'Flow IAT Std',
-    'Flow IAT Max',
-    'Flow IAT Min',
-    'Fwd IAT Total',
-    'Fwd IAT Mean',
-    'Fwd IAT Std',
-    'Fwd IAT Max',
-    'Fwd IAT Min',
-    'Bwd IAT Total',
-    'Bwd IAT Mean',
-    'Bwd IAT Std',
-    'Bwd IAT Max',
-    'Bwd IAT Min',
-    'Fwd Header Length',
-    'Bwd Header Length',
-    'Fwd Packets/s',
-    'Bwd Packets/s',
-    'Min Packet Length',
-    'Max Packet Length',
-    'Packet Length Mean',
-    'Packet Length Std',
-    'Packet Length Variance',
-    'FIN Flag Count',
-    'PSH Flag Count',
-    'ACK Flag Count',
-    'Average Packet Size',
-    'Subflow Fwd Bytes',
-    'Init_Win_bytes_forward',
-    'Init_Win_bytes_backward',
-    'act_data_pkt_fwd',
-    'min_seg_size_forward',
-    'Active Mean',
-    'Active Max',
-    'Active Min',
-    'Idle Mean',
-    'Idle Max',
-    'Idle Min',
-]  
+# Single source of truth: the extractor defines the exact 52 CICIDS2017
+# names AND their order. Inference correctness depends on dict order ==
+# trained column order, so the route must never maintain its own copy.
+EXPECTED_FEATURES = list(CICIDS_FEATURES)
+MAX_INVALID_FEATURES = 8
+MAX_ABS_FEATURE_VALUE = 1e15
+def _validate_features(raw: dict):
+    """
+    Classify each expected feature:
+      - valid   : present, numeric, finite, within sane bounds
+      - missing : key absent (coerced to 0.0, allowed in small numbers)
+      - invalid : non-numeric, non-finite, negative, or absurd magnitude
+    Returns (features, missing_count, invalid_names).
+    Every CICIDS2017 statistic is non-negative by construction, so
+    negatives are treated as malformed rather than silently coerced.
+    """
+    features = {}
+    missing = 0
+    invalid = []
+    for feat_name in EXPECTED_FEATURES:
+        if feat_name not in raw:
+            features[feat_name] = 0.0
+            missing += 1
+            continue
+        try:
+            value = float(raw[feat_name])
+        except (ValueError, TypeError):
+            invalid.append(feat_name)
+            features[feat_name] = 0.0
+            continue
+        if (not math.isfinite(value)
+                or value < 0
+                or abs(value) > MAX_ABS_FEATURE_VALUE):
+            invalid.append(feat_name)
+            features[feat_name] = 0.0
+            continue
+        features[feat_name] = value
+    return features, missing, invalid
+def _coerce_port(value) -> int:
+    """Ports must be integers in [0, 65535]; anything else clamps to 0."""
+    try:
+        port = int(float(value))
+    except (ValueError, TypeError):
+        return 0
+    if not 0 <= port <= 65535:
+        return 0
+    return port  
 @router.post("/predict", response_model=PredictResponse)
 async def predict_flow(
     request_obj: Request,
@@ -102,25 +98,43 @@ async def predict_flow(
         raw = await request_obj.json()
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
-    source_ip      = str(raw.get("_source_ip", "")) or "unknown"
-    destination_ip = str(raw.get("_destination_ip", "")) or "unknown"
-    src_port       = int(raw.get("_src_port", 0) or 0)
-    dst_port       = int(raw.get("_dst_port", 0) or 0)
-    features = {}
-    missing_count = 0
-    for feat_name in EXPECTED_FEATURES:
-        if feat_name in raw:
-            try:
-                features[feat_name] = float(raw[feat_name])
-            except (ValueError, TypeError):
-                features[feat_name] = 0.0
-        else:
-            features[feat_name] = 0.0
-            missing_count += 1
+    source_ip      = str(raw.get("_source_ip", "")).strip() or "unknown"
+    destination_ip = str(raw.get("_destination_ip", "")).strip() or "unknown"
+    src_port       = _coerce_port(raw.get("_src_port", 0))
+    dst_port       = _coerce_port(raw.get("_dst_port", 0))
+    features, missing_count, invalid_names = _validate_features(raw)
+    if missing_count == len(EXPECTED_FEATURES):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid request: none of the 52 CICIDS2017 features were provided.",
+        )
+    if invalid_names:
+        log.warning(
+            f"Rejecting prediction: {len(invalid_names)} malformed features "
+            f"(non-numeric, non-finite, negative, or >1e15): {invalid_names[:10]}"
+        )
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Feature values must be finite, non-negative numbers "
+                           "within sane bounds. No silent coercion is applied.",
+                "invalid_features": invalid_names[:20],
+            },
+        )
+    if missing_count > MAX_INVALID_FEATURES:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": (
+                    f"{missing_count} of {len(EXPECTED_FEATURES)} features are "
+                    f"missing (max tolerated: {MAX_INVALID_FEATURES}). "
+                    "Provide a complete CICIDS2017 feature vector."
+                ),
+                "missing": missing_count,
+            },
+        )
     if missing_count > 0:
         log.debug(f"Feature vector has {missing_count}/52 missing features (defaulted to 0)")
-    if missing_count == 52:
-        log.warning("ALL 52 features are missing — this looks like an invalid request")
     try:
         result = predict_fn(features, feature_names=EXPECTED_FEATURES)
     except Exception as e:
@@ -144,7 +158,7 @@ async def predict_flow(
     db.add(alert)
     db.commit()
     db.refresh(alert)
-    if prediction != "BENIGN":
+    if not is_benign(prediction):
         try:
             ws_manager = request_obj.app.state.ws_manager
             await ws_manager.broadcast({
