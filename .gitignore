@@ -35,3 +35,8 @@ dist-ssr
 remove_comments.py
 VIVA_GUIDE.md
 NIDS_Final_Report.pdf
+combine_files.py
+NIDS_AuditReport.md
+complete_nids_codebase.txt
+combine_nids_clean.py
+final_nids_codebase.txt
