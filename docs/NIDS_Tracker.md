@@ -3,10 +3,10 @@
 **Project:** The Sentinel — Network Intrusion Detection System (NIDS)
 **Document:** NIDS_Tracker.md
 **Update cadence:** every milestone / after any code change
-**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
+**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY (Colab) · 🟠 LOCAL-ONLY (removed — git history) · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
 **Tickbox legend:** `[x]` done · `[/]` partial · `[ ]` not started
 
-> Mirrors NIDS_ImplementationPlan task IDs. New work should continue the numbering (e.g., `PH9-01`).
+> Mirrors NIDS_ImplementationPlan task IDs. Phases 0–10 describe the original local implementation (🟠 removed from the working tree in the Colab-only cleanup); Phases 11–12 document the current Colab edition. New work should continue the numbering (e.g., `PH13-01`).
 
 ---
 
@@ -110,11 +110,11 @@
 
 ## Phase 8 — Quality, Tests & Docs
 
-- [x] PH8-01 Unit tests (`tests/`) — 32 passing incl. benign-label regression, DoS severity, 52-feature contract
+- [x] PH8-01 Unit tests (`tests/`) — 32 passing at Phase-8 close; 78 after the hardening pass (incl. benign-label regression, DoS severity, 52-feature contract)
 - [x] PH8-01b Tests realigned to actual extractor contract (CICIDS camelCase names; snake_case expectations removed) [x]
 - [x] PH8-02 Integration scripts (in-process + live API)
 - [x] PH8-03 `check.py` (now also writes `manifest.json` with checks_ok flag)
-- [x] PH8-04 Frontend tests — vitest configured (jsdom, globals, setup with matchMedia polyfill); 17 specs across 6 suites: AlertFeed (rows/empty/CSV/links), AttackTimeline (no-dummy empty/error/bucketing), Chatbot (markdown sanitization), Sidebar (routes/real export/no placeholders), StatusBar (real health states), Settings page [x]
+- [x] PH8-04 Frontend tests — vitest configured (jsdom, globals, setup with matchMedia polyfill); 21 specs across 7 suites: AlertFeed (rows/empty/CSV/links), AttackTimeline (no-dummy empty/error/bucketing), Chatbot (markdown sanitization), Sidebar (routes/real export/no placeholders), StatusBar (real health states), Settings page, useWebSocket (auth stop/reconnect/normalization) [x]
 - [x] PH8-05 README ready (runbook/demo/API/changelog/security)
 - [x] PH8-06 8-doc set (PRD/TechSpec/AppFlow/Design/Schema/Plan/Tracker/Rules)
 - [x] PH8-07 Supporting docs (VIVA guide, mid/final reports, PDF)
@@ -131,7 +131,59 @@
 - [ ] PH9-07 AuthN/AuthZ + TLS [ ]
 - [/] PH9-08 ✅ PARTIAL — sniffer now retries with backoff and counts drops (PH5-03b); streaming/queueing + model registry (redis/mlflow/optuna) still FUTURE
 - [ ] PH9-09 Alembic migrations [ ]
-- [ ] PH9-10 Rotate `.env` Google key 🔒 [ ]
+- [ ] PH9-10 Rotate `.env` Google key 🔒 [ ] (the leaked literal has been scrubbed from `NIDS_AuditReport.md`; rotation in Google Cloud Console remains a manual user action)
+
+---
+
+## Phase 10 — Final Security Hardening (Z.ai audit pass)
+
+- [x] PH10-01 Redact leaked Gemini key literal from `NIDS_AuditReport.md`; repo-wide secret scan clean (`.env` holds the runtime key, gitignored; rotation tracked as PH9-10) [x]
+- [x] PH10-02 WebSocket `/ws/live` authentication: `?token=`/`X-API-Key` checked before any stream data (close 4401); frontend sends the token from `VITE_NIDS_API_KEY` and stops reconnecting on 4401 [x]
+- [x] PH10-03 WebSocket client cap (`NIDS_WS_MAX_CLIENTS`, default 20, close 1013) + concurrent broadcast with 5 s per-client send timeout + dead-client eviction + client-message drain [x]
+- [x] PH10-04 Metadata IP validation (`ipaddress`, IPv4/IPv6, `"unknown"` sentinel; oversized/control-char/non-IP → 422) — blocks DB bloat, log forging, WS amplification, chatbot prompt injection [x]
+- [x] PH10-05 Global request-body cap (`NIDS_MAX_BODY_BYTES`, default 1 MB → 413) + `ChatRequest.history` structurally bounded (≤50 `Dict[str,str]` entries) [x]
+- [x] PH10-06 Event-loop fix: blocking ML/SHAP inference and DB commit off-loaded via `run_in_threadpool` in `/api/predict` [x]
+- [x] PH10-07 Rate limiter hardening: safe env parse (empty/invalid → default + warning, never crashes startup), stale-key eviction with hard memory cap, per-process semantics documented [x]
+- [x] PH10-08 Predict robustness: non-object JSON root → 400; `Infinity`/`NaN`/`1e400` ports clamp (no OverflowError 500); generic 500 detail (raw exception logged server-side only) [x]
+- [x] PH10-09 Sniffer lifecycle: `RLock` around lazy-init/start (concurrent starts → one instance), stop/stats never instantiate, `{"interface": …}` JSON body contract with validation against `get_if_list()` [x]
+- [x] PH10-10 Query hardening: `ip-leaderboard` limit bounded 1–100; alerts pagination `timestamp DESC, id DESC`; `type` filter wildcards escaped + length-bounded (API + chat tools) [x]
+- [x] PH10-11 Error sanitization: `/health` returns `"ok"`/`"error"` with a 10 s cached DB probe; predict/chat/system failures return generic messages, details only in server logs; constant-time API-key compare [x]
+- [x] PH10-12 Config paths: SQLite default anchored to backend root (no second empty DB from repo root); `.env` loaded from backend root in chatbot; `NIDS_PREDICT_URL` env for the sniffer target [x]
+- [x] PH10-13 Model startup robustness: `safe_load_artifacts()` never raises (corrupt artifacts → 503 mode); lifespan logs based on the real `_model_loaded` flag [x]
+- [x] PH10-14 Timezone-aware UTC timestamps across API/WS/chat/leaderboard (`models.iso_utc`); frontend parses correctly in all locales [x]
+- [x] PH10-15 SHAP JSON safety: non-finite values coerced to 0.0 (model + route) and serialized with `allow_nan=False` — browser-safe JSON guaranteed [x]
+- [x] PH10-16 `/api/system` reports `capture_auto_start` via the shared `_capture_enabled()` predicate (`NIDS_CAPTURE=0` no longer shows as enabled) [x]
+- [x] PH10-17 Chatbot hardening: native Gemini system message, 504 on timeout, only client `user` history turns trusted, tool args type-coerced/clamped, system prompt treats tool output as untrusted data [x]
+- [x] PH10-18 Windows interface detection no longer skips adapters whose description contains "npcap"; candidates logged [x]
+- [x] PH10-19 Regression suite `tests/test_hardening.py` (46 tests) + `useWebSocket` frontend specs (4) covering every fix above [x]
+- [x] PH10-20 Partial-feature transparency: `missing_features` count exposed in predict response + WS broadcast (≤8-missing tolerance preserved and documented) [x]
+
+---
+
+## Phase 11 — Colab Conversion 🔵
+
+- [x] PH11-01 Colab EDA notebook (`01_EDA_Colab.ipynb`) — Drive dataset, float32, ISSUE-05 fixed, key-numbers table
+- [x] PH11-02 Colab GPU training notebook (`02_Training_GPU_Colab.ipynb`) — stratified load, dual scalers, arena, PyTorch MLP, artifact export
+- [x] PH11-03 Colab inference + FastAPI notebook (`03_Inference_API_Colab.ipynb`) — all routes, validation guards, synthetic flows, replay, tunnel, chatbot
+- [x] PH11-04 Colab Gradio dashboard notebook (`04_Dashboard_Colab.ipynb`)
+- [x] PH11-05 Percent-format sources + `pack.py` (regenerate + validate)
+- [x] PH11-06 `smoke_test.py` end-to-end (notebook 03 cells + API contract) — **PASSED**
+- [x] PH11-07 Colab README + local-only cleanup (freed ~1.4 GB)
+
+## Phase 12 — 100/100 Upgrades 🔵
+
+- [x] PH12-01 ROC curves + per-class AUC (notebook 02 Step 9.1)
+- [x] PH12-02 Normalized confusion matrix (notebook 02 Step 9.2)
+- [x] PH12-03 Optuna Bayesian tuning of XGBoost on T4 (notebook 02 Step 8.5)
+- [x] PH12-04 T4 GPU benchmark (CPU→GPU speed-up, per-model times)
+- [x] PH12-05 SHAP deep dive — global top-15 + per-class importance (notebook 03 Step 4.5)
+- [x] PH12-06 Training summary table (notebook 02 Step 11)
+- [x] PH12-07 API contract summary table (notebook 03 Step 6.5)
+- [x] PH12-08 EDA key-numbers table (notebook 01 Step 14)
+- [x] PH12-09 Static dashboard preview PNGs (notebook 04 Step 4)
+- [x] PH12-10 ISSUE-06 fixed — benign FPR index from encoder
+- [x] PH12-11 ISSUE-05 fixed — `Attack Type` label detection
+- [x] PH12-12 Docs + README synced to Colab edition
 
 ---
 
@@ -149,14 +201,19 @@
 | 7 Frontend | 21 | 21 | 0 | 0 |
 | 8 Quality & Docs | 8 | 8 | 0 | 0 |
 | 9 Backlog | 11 | 5 | 1 | 5 |
-| **Total** | **93** | **84** | **3** | **6** |
+| 10 Final Hardening | 20 | 20 | 0 | 0 |
+| 11 Colab Conversion | 7 | 7 | 0 | 0 |
+| 12 100/100 Upgrades | 12 | 12 | 0 | 0 |
+| **Total** | **132** | **123** | **3** | **6** |
 
-> Final audit recount (every checkbox verified against repo this pass): **93 items | 84 ✅ | 3 🟡/[/] | 6 🔴/⚪**. Corrections vs the prior rollup (92|83|3|6): Phase 3 = 9 items (PH3-03b/03c/06 added), Phase 4 = 14 (PH4-09b/10..13), Phase 7 = 21 (PH7-09b/12b/13b/13c/14..17). Previous pre-audit rollup was 81|64|2|15.
+> Current state (2026-08-28): Phases 0–10 are 🟠 LOCAL-ONLY (removed from the working tree in the Colab-only cleanup; preserved in git history). The live implementation is Phases 11–12 (Colab edition). **132 items | 123 ✅ | 3 🟡/[/] | 6 🔴/⚪** — all 19 Colab-edition items verified by `_build/smoke_test.py` + nbformat validation.
 
 ## Verification Checklist (per change)
 
-- [x] `pytest tests/` green (backend) — 32 passing
-- [x] `npm run build` / `npm run lint` green (frontend) — 17 specs / 6 suites passing
-- [x] `/health` OK: model loaded, DB ok (live smoke on :8011 + /api/system)
-- [x] POST one benign + one attack flow → verified stats/alerts/WS
-- [x] Docs updated (PRD/TechSpec/… ID referenced if new feature) — final audit pass synced all 8 docs
+- [x] `pytest tests/` green (backend) — 78 passing (32 API/extractor + 46 hardening)
+- [x] `npm test` / `npm run build` / `npm run lint` green (frontend) — 21 specs / 7 suites passing; lint 0 errors (13 pre-existing shadcn warnings)
+- [x] `/health` OK: model loaded, DB ok (live smoke on :8011/:8012 + /api/system)
+- [x] POST one benign + one attack flow → verified stats/alerts/WS (WS history batch + `…+00:00` timestamps verified live)
+- [x] WS auth verified live (4401 without/with wrong token; valid token streams; 1013 over cap)
+- [x] Chatbot fails safely without key (503 verified live)
+- [x] Docs updated (PRD/TechSpec/AppFlow/Schema/Design/Rules/Tracker/README/AuditReport) — hardening pass synced all docs

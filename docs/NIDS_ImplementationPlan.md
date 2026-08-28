@@ -2,8 +2,8 @@
 
 **Project:** The Sentinel — Network Intrusion Detection System (NIDS)
 **Document:** NIDS_ImplementationPlan.md
-**Status:** ✅ Complete (mapped to actual repositories & commits)
-**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
+**Status:** ✅ Complete — **Colab Edition** (2026-08-28). The original implementation (Phases 0–10) is 🟠 LOCAL-ONLY (removed from the working tree; preserved in git history). Phases 11–12 document the Colab conversion and the 100/100 upgrades.
+**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY (Colab) · 🟠 LOCAL-ONLY (removed — see git history) · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
 
 > This plan documents how the repository was (and should be) built — every line traced to real files. Phase order = dependency order (data → model → API → dashboard).
 
@@ -153,16 +153,74 @@
 
 | Task ID | Task | Deliverable | Status |
 |---------|------|-------------|--------|
-| PH8-01 | Extractor & API unit tests (32 passing incl. benign-label regression, DoS severity, 52-feature contract) | `tests/` | ✅ |
+| PH8-01 | Extractor & API unit tests (32 passing at Phase-8 close; 78 after the Phase-10 hardening pass incl. benign-label regression, DoS severity, 52-feature contract) | `tests/` | ✅ |
 | PH8-01b | Tests realigned to actual extractor contract (CICIDS camelCase names; snake_case expectations removed) | `tests/` | ✅ |
 | PH8-02 | Integration scripts (in-process pipeline; live API; 20-flow replay) | `test_pipeline.py`, `test_api.py` (root), `test2_api.py` | ✅ |
 | PH8-03 | Model sanity script (now also writes `manifest.json` with `checks_ok` flag) | `check.py` | ✅ |
-| PH8-04 | Frontend tests (vitest + Testing Library, jsdom, matchMedia polyfill) — 17 specs across 6 suites | `src/components/__tests__`, `src/pages/__tests__` | ✅ |
+| PH8-04 | Frontend tests (vitest + Testing Library, jsdom, matchMedia polyfill) — 21 specs across 7 suites after the hardening pass | `src/components/__tests__`, `src/pages/__tests__`, `src/hooks/__tests__` | ✅ |
 | PH8-05 | README (full runbook: quick start, demo flow, API table, changelog, security notes) | `README.md` | ✅ |
 | PH8-06 | This documentation set (PRD/TechSpec/AppFlow/Design/Schema/Plan/Tracker/Rules) | 8 × docs | ✅ NEW |
 | PH8-07 | Value-pack docs (viva guide, mid/final reports, PDFs) | root PDFs/MD | ✅ (gitignored) |
 
 ---
+
+## Phase 10 — Final Security Hardening (Z.ai audit pass)
+
+| Task ID | Task | Deliverable | Status |
+|---------|------|-------------|--------|
+| PH10-01 | Redact leaked Gemini key literal from the audit report; repo-wide secret scan | `docs/NIDS_AuditReport.md` | ✅ (rotation = PH9-10, user action) |
+| PH10-02 | WS auth: `?token=`/`X-API-Key` before any stream data (4401); frontend token support + stop-on-4401 | `main.py`, `useWebSocket.ts`, `client.ts` | ✅ |
+| PH10-03 | WS client cap (1013) + concurrent broadcast with per-client send timeout + eviction + drain | `main.py` (`ConnectionManager`) | ✅ |
+| PH10-04 | Metadata IP validation (`ipaddress`; 422 on invalid/oversized/control-char) | `routes/predict.py` | ✅ |
+| PH10-05 | Global body-size cap (413) + structurally bounded chat history | `main.py`, `schemas.py` | ✅ |
+| PH10-06 | Event-loop fix: inference + DB commit via `run_in_threadpool` | `routes/predict.py` | ✅ |
+| PH10-07 | Rate limiter: safe env parse, stale-key eviction, memory cap, per-process note | `main.py` | ✅ |
+| PH10-08 | Predict: non-object root → 400; overflow-safe ports; generic 500 detail | `routes/predict.py` | ✅ |
+| PH10-09 | Sniffer race fix (RLock), stop/stats without instantiation, JSON-body interface contract + validation | `main.py`, `schemas.py` | ✅ |
+| PH10-10 | Leaderboard limit bounds; deterministic pagination; escaped `type` filter | `routes/stats.py`, `routes/alerts.py`, `routes/chatbot.py` | ✅ |
+| PH10-11 | Error sanitization (health, predict, chat, system) + constant-time key compare | `main.py`, `routes/predict.py`, `routes/chatbot.py` | ✅ |
+| PH10-12 | Repo-root-anchored SQLite path + WAL/busy_timeout; backend-root `.env`; `NIDS_PREDICT_URL` | `database.py`, `chatbot.py`, `sniffer.py` | ✅ |
+| PH10-13 | Corrupt-artifact degradation (`safe_load_artifacts`); truthful model-load logging | `model/predict.py`, `main.py` | ✅ |
+| PH10-14 | Timezone-aware UTC timestamps everywhere (`models.iso_utc`/`utcnow`) | `models.py` + all routes | ✅ |
+| PH10-15 | SHAP non-finite sanitization + `allow_nan=False` serialization | `model/predict.py`, `routes/predict.py` | ✅ |
+| PH10-16 | `NIDS_CAPTURE=0` status fix (shared `_capture_enabled()` predicate) | `main.py` | ✅ |
+| PH10-17 | Chatbot: native system message, 504 timeout, user-only history trust, tool-arg coercion, untrusted-tool-output prompt | `routes/chatbot.py` | ✅ |
+| PH10-18 | Windows Npcap detection heuristic fix | `capture/sniffer.py` | ✅ |
+| PH10-19 | Regression suites: `tests/test_hardening.py` (46) + `useWebSocket.test.tsx` (4) | `tests/`, frontend `__tests__` | ✅ |
+| PH10-20 | Partial-feature transparency: `missing_features` in response + broadcast | `routes/predict.py`, `schemas.py` | ✅ |
+
+**Verification:** `pytest tests/` → 78 passing; `npm test` → 21 passing; `npm run lint`/`npm run build` green; live smoke on :8011/:8012 (health, benign+attack flows, WS auth 4401/1013, chat 503 without key).
+
+---
+
+## Phase 11 — Colab Conversion (2026-08-28) 🔵
+
+| Task ID | Task | Deliverable | Status |
+|---------|------|-------------|--------|
+| PH11-01 | Notebook 01 — EDA Colab edition (Drive dataset, float32 loading, label detection fixed — ISSUE-05, key-numbers table) | `01_EDA_Colab.ipynb` | ✅ |
+| PH11-02 | Notebook 02 — GPU training (chunked stratified load, dual scalers, arena, PyTorch MLP, artifact export + Drive sync) | `02_Training_GPU_Colab.ipynb` | ✅ |
+| PH11-03 | Notebook 03 — Inference + embedded FastAPI (predict/alerts/stats/leaderboard/WS, validation guards, synthetic flows, CSV replay, tunnel, chatbot) | `03_Inference_API_Colab.ipynb` | ✅ |
+| PH11-04 | Notebook 04 — Gradio command center + traffic lab + static previews | `04_Dashboard_Colab.ipynb` | ✅ |
+| PH11-05 | Percent-format sources + packer (regenerate notebooks, nbformat + syntax validation) | `_build/pack.py` + `_build/*.py` | ✅ |
+| PH11-06 | End-to-end smoke test (executes notebook 03 cells; asserts API + validation contract) | `_build/smoke_test.py` | ✅ |
+| PH11-07 | Colab README + cleanup of local-only components (src/, frontend/, venv/, tests/, artifacts) — freed ~1.4 GB | `notebooks/colab/README.md`, working tree | ✅ |
+
+## Phase 12 — 100/100 Upgrades (2026-08-28) 🔵
+
+| Task ID | Task | Deliverable | Status |
+|---------|------|-------------|--------|
+| PH12-01 | **ROC curves + per-class AUC** (one-vs-rest, macro-average) | notebook 02 Step 9.1 → `roc_curves.png` | ✅ |
+| PH12-02 | **Normalized confusion matrix** (rows sum to 1) | notebook 02 Step 9.2 → `confusion_matrix_normalized.png` | ✅ |
+| PH12-03 | **Optuna Bayesian tuning** of XGBoost on T4 (20 trials; default vs tuned comparison; winner deployed) | notebook 02 Step 8.5 | ✅ |
+| PH12-04 | **T4 GPU benchmark** (per-model times, XGB CPU→GPU speed-up, MLP GPU time) | notebook 02 Step 8.5 | ✅ |
+| PH12-05 | **SHAP deep dive** (global top-15 mean-\|SHAP\| + per-class grouped importance) | notebook 03 Step 4.5 → `shap_global_importance.png`, `shap_per_class.png` | ✅ |
+| PH12-06 | **Training summary table** (deployed-model-consistent) | notebook 02 Step 11 | ✅ |
+| PH12-07 | **API contract summary table** | notebook 03 Step 6.5 | ✅ |
+| PH12-08 | **EDA key-numbers table** | notebook 01 Step 14 | ✅ |
+| PH12-09 | **Static dashboard preview PNGs** for the report | notebook 04 Step 4 | ✅ |
+| PH12-10 | ISSUE-06 fix — benign FPR index looked up from encoder (not hardcoded 0) | notebook 02 Step 9/11 | ✅ |
+| PH12-11 | ISSUE-05 fix — `Attack Type` label detection in notebooks | notebooks 01/02 | ✅ |
+| PH12-12 | Docs + README synced to Colab edition | `README.md`, `docs/*` | ✅ |
 
 ## Dependencies Summary
 
