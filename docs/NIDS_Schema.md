@@ -2,16 +2,16 @@
 
 **Project:** The Sentinel — Network Intrusion Detection System (NIDS)
 **Document:** NIDS_Schema.md
-**Status:** ✅ Complete (derived from `models.py`, live DB inspection, artifacts)
-**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
+**Status:** ✅ Complete — **Colab Edition** (2026-08-28). The runtime DB is now `/content/nids_colab.db` (created by notebook 03/04's embedded API). The original `nids.db` is 🟠 LOCAL-ONLY (removed). Artifacts live in `/content/nids_artifacts/` (synced to Drive).
+**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY (Colab) · 🟠 LOCAL-ONLY (removed) · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
 
 ---
 
 ## 1. Overview
 
-Persistence is managed by SQLAlchemy 2.0 (ORM) with a default **SQLite** backend (`sqlite:///./nids.db`, `check_same_thread=False`, `pool_pre_ping=True`). PostgreSQL is supported by configuration (`DATABASE_URL`), though all repository evidence uses SQLite.
+Persistence is managed by SQLAlchemy 2.0 (ORM) with a **SQLite** backend at `/content/nids_colab.db` (`check_same_thread=False`, `pool_pre_ping=True`, WAL journal + 5 s busy timeout — the same pragmas as the original, created by notebook 03/04's embedded API).
 
-Tables are created automatically at startup (`Base.metadata.create_all` in the lifespan).
+Tables are created automatically when the notebook's API cell runs (`Base.metadata.create_all`).
 
 **Currently only ONE table exists: `alerts`.**
 
@@ -22,7 +22,7 @@ Tables are created automatically at startup (`Base.metadata.create_all` in the l
 | Column | Type (SQLAlchemy) | SQLite DDL | Constraints | Notes |
 |--------|-------------------|------------|-------------|-------|
 | `id` | Integer PK | INTEGER NOT NULL PRIMARY KEY | autoincrement; indexed | |
-| `timestamp` | DateTime | DATETIME | default `datetime.utcnow`; indexed | Alert creation time (UTC) |
+| `timestamp` | DateTime | DATETIME | default timezone-aware `utcnow`; indexed | Alert creation time (UTC). Serialized by all API/WS surfaces as timezone-aware ISO-8601 (`…+00:00`) via `models.iso_utc` — legacy naive rows are treated as UTC |
 | `source_ip` | String(45) | VARCHAR(45) | indexed | IPv4/IPv6 sized |
 | `destination_ip` | String(45) | VARCHAR(45) | | |
 | `src_port` | Integer | INTEGER | NULL allowed | 0 for ICMP/etc. |
@@ -77,57 +77,32 @@ No relationships/FKs — the system stores flat alert rows only.
 ```json
 [{"feature": "Flow Bytes/s", "value": 1.2345}, {"feature": "...", "value": -0.9}]
 ```
-Top 5 by |value| descending (sign preserved).
+Top 5 by |value| descending (sign preserved). Values are sanitized before persistence/broadcast — non-finite SHAP values become `0.0` and serialization uses `allow_nan=False`, so the JSON never contains bare `NaN`/`Infinity` tokens (browser `JSON.parse`-safe).
 
 ---
 
-## 4. Observed Database State (Inspection Snapshot)
+## 4. Observed Database State (Colab run — example)
 
-From live inspection of `nids.db`:
+After a full replay from notebook 03 (balanced sample, 5 per class): the DB contains rows for each posted flow. The schema is identical to the original; the row count varies by replay configuration.
 
-**Row count:** 1,999
-
-**prediction distribution:**
-| prediction | count |
-|------------|-------|
-| Normal Traffic | 1,801 |
-| Port Scanning | 76 |
-| Brute Force | 63 |
-| DDoS | 20 |
-| Web Attacks | 19 |
-| Bots | 18 |
-| DoS | 2 |
-
-**severity distribution** — counts as produced by the current `SEVERITY_MAP` (post-fix; earlier DB rows persisted the pre-fix values shown in parentheses):
-
-| severity | count |
-|----------|-------|
-| NONE | 1,801 (all "Normal Traffic") |
-| MEDIUM | 95 (Port Scanning 76 + Web Attacks 19) |
-| LOW | 63 (Brute Force) — pre-fix DB had 65, incl. 2 "DoS" rows that fell through to the LOW fallback because bare `"dos"` was missing from `SEVERITY_MAP` |
-| HIGH | 18 (Bots) |
-| CRITICAL | 22 (DDoS 20 + DoS 2 — DoS now maps to CRITICAL via the added `"dos"` keyword) |
-
-*e.g. sample row: `id=1`, `timestamp='2026-04-11 19:32:14'`, `source_ip='10.0.0.1'`, `destination_ip='unknown'`, `src/dst_port=0`, `prediction='Normal Traffic'`, `confidence=1.0`, `severity='NONE'`, `shap_json` present with 5 items.
-
-> ✅ **NIDS-ISSUE-01 (fixed):** Every persisted row has a real label; **zero rows** have `prediction='BENIGN'` — the model emits `"Normal Traffic"`. All aggregation code now filters on `BENIGN_LABELS = ("Normal Traffic", "BENIGN")` via `prediction.notin_(BENIGN_LABELS)` (`src/api/constants.py`), so benign flows are no longer counted as attacks. Rows persisted before the fix need re-flagging only if a historical re-count is desired; live stats now behave correctly. (Separate fix: bare `"dos"` added to `SEVERITY_MAP` so DoS maps to CRITICAL, not LOW.)
+> The original `nids.db` (2,001 rows: 1,803 Normal Traffic + 198 attacks) is 🟠 LOCAL-ONLY; the Colab notebooks create a fresh database per session.
 
 ---
 
-## 5. Non-DB Artifacts (File-Backed State)
+## 5. Non-DB Artifacts (File-Backed State) — Colab edition
 
-| Artifact | Format | Role |
-|----------|--------|------|
-| `model.pkl` | joblib (LGBMClassifier) | 52-feature classifier |
-| `scaler.pkl` | joblib (StandardScaler) | inference pre-processing |
-| `robust_scaler.pkl` | joblib (RobustScaler) | scaler-comparison artifact |
-| `label_encoder.pkl` | joblib (LabelEncoder) | index ↔ 7 class labels |
-| `manifest.json` | JSON | deployed-model manifest: model type (LGBMClassifier), feature count (52), class labels (7), severity-map key count, `checks_ok` — written by `check.py` and refreshed by `predict._write_manifest()` (TMG-04) |
-| `data/processed/X_test.npy` | numpy (33 MB) | evaluation holdout features |
-| `data/processed/y_test.npy` | numpy (320 KB) | evaluation holdout labels |
-| `data/raw/cicids2017_cleaned.csv` | CSV (~717 MB) | training dataset source |
+| Artifact | Format | Role | Location |
+|----------|--------|------|----------|
+| `model.pkl` | joblib (best sklearn model) | 52-feature classifier | `/content/nids_artifacts/` |
+| `scaler.pkl` | joblib (StandardScaler) | inference pre-processing | `/content/nids_artifacts/` |
+| `robust_scaler.pkl` | joblib (RobustScaler) | scaler-comparison artifact | `/content/nids_artifacts/` |
+| `label_encoder.pkl` | joblib (LabelEncoder) | index ↔ 7 class labels | `/content/nids_artifacts/` |
+| `feature_names.json` | JSON | 52 CICIDS feature names | `/content/nids_artifacts/` |
+| `manifest.json` | JSON | model type, feature count, classes, severity-map keys | `/content/nids_artifacts/` — written by notebook 02 (mirrors `predict.py::_write_manifest`) |
+| `X_test.npy` / `y_test.npy` | numpy | evaluation holdout | `/content/nids_artifacts/` |
+| `data/raw/cicids2017_cleaned.csv` | CSV | training dataset source | `MyDrive/nids_data/` (uploaded) |
 
-All model artifacts are gitignored (`*.pkl`), `.env` gitignored, `data/` gitignored, `*.db` gitignored.
+All artifacts are synced to `MyDrive/nids_artifacts/` and zipped into `/content/nids_artifacts.zip` for download. The original `nids-backend` model artifacts are 🟠 LOCAL-ONLY (removed).
 
 ---
 
@@ -136,10 +111,10 @@ All model artifacts are gitignored (`*.pkl`), `.env` gitignored, `data/` gitigno
 | Endpoint | Query Pattern |
 |----------|---------------|
 | `GET /api/stats` | `COUNT(*)` total; `COUNT(prediction NOT IN ('Normal Traffic','BENIGN'))`; `GROUP BY prediction`; `GROUP BY severity` |
-| `GET /api/alerts` | `ORDER BY timestamp DESC LIMIT ? OFFSET ?` + optional type/severity filters + `exclude_benign` (`prediction NOT IN ('Normal Traffic','BENIGN')`) |
-| `GET /api/ip-leaderboard` | `GROUP BY source_ip COUNT(*) MAX(timestamp) ORDER BY count DESC LIMIT n` |
-| `WS /ws/live (initial)` | `WHERE prediction NOT IN ('Normal Traffic','BENIGN') ORDER BY timestamp DESC LIMIT 50` |
-| Chat tools | Same aggregations + `ilike` type filter + `hours_back` window (`>= utcnow() - hours`) |
+| `GET /api/alerts` | `ORDER BY timestamp DESC, id DESC LIMIT ? OFFSET ?` + optional type (substring, wildcards escaped)/severity filters + `exclude_benign` (`prediction NOT IN ('Normal Traffic','BENIGN')`) |
+| `GET /api/ip-leaderboard` | `GROUP BY source_ip COUNT(*) MAX(timestamp) ORDER BY count DESC, last_seen DESC LIMIT n` (`limit` bounded 1–100) |
+| `WS /ws/live (initial)` | `WHERE prediction NOT IN ('Normal Traffic','BENIGN') ORDER BY timestamp DESC, id DESC LIMIT 50` |
+| Chat tools | Same aggregations + `ilike` type filter (wildcards escaped) + `hours_back` window (`>= utcnow() - hours`) |
 
 The benign set lives in one place: `BENIGN_LABELS` in `src/api/constants.py`. Any future label drift must be updated there, not re-spelled per query.
 
@@ -149,5 +124,5 @@ The benign set lives in one place: `BENIGN_LABELS` in `src/api/constants.py`. An
 
 - No Alembic migration framework present → `Base.metadata.create_all()` only **creates missing tables**; it never adds columns to, or alters, existing tables. Schema changes require manual DDL or a DB recreate. 🟡
 - `true_label` column reserved but unused — intended for offline evaluation rows. 🔵
-- PostgreSQL path exists in config but no migration/seed evidence in repo. 🟡
-- ✅ Resolved (PH4-09): benign alignment is done in code via `BENIGN_LABELS` (`prediction.notin_(...)`) — schema unchanged and compatible; historically-inserted "Normal Traffic" rows would only need re-flagging if a historical re-count is ever desired. ⚪
+- PostgreSQL path exists in the original config but is **not used** in the Colab edition (SQLite only). 🟡
+- ✅ Resolved (PH4-09): benign alignment is done in code via `BENIGN_LABELS` (`prediction.notin_(...)`) — schema unchanged and compatible.

@@ -2,8 +2,8 @@
 
 **Project:** The Sentinel — Network Intrusion Detection System (NIDS)
 **Document:** NIDS_Design.md
-**Status:** ✅ Complete (derived from frontend source)
-**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
+**Status:** ✅ Complete — **Colab Edition** (2026-08-28). The React dashboard is 🟠 LOCAL-ONLY (removed); notebook 04 ships a **Gradio command center** that preserves the same design language and data. The original React component specs (§4) are kept as the design contract; the Gradio mapping is in §3.1b.
+**Legend:** ✅ IMPLEMENTED · 🟡 PARTIAL · 🔵 NOTEBOOK-ONLY (Colab) · 🟠 LOCAL-ONLY (removed) · 🔴 NOT IMPLEMENTED · ⚪ FUTURE
 
 ---
 
@@ -49,7 +49,34 @@ Loaded via Google Fonts `@import` in `index.css`.
 
 ## 3. Page Layout
 
-### 3.1 `PageShell.tsx` — Master Layout (shared by all routes)
+### 3.1b Colab Gradio Command Center (notebook 04) 🔵
+
+The Gradio Blocks app mirrors the React layout: a title strip + KPI row on top, then four tabs:
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│ 🛡️ The Sentinel — NIDS Command Center (Colab)          [refresh]  │
+│ KPI strip: Flows · Attacks · Benign · Uptime (3 s auto-refresh)   │
+├───────────────┬───────────────┬───────────────────────────────────┤
+│ 📊 Dashboard  │ 🕵 Threat intel│ 🧠 Explain       │ 🧪 Traffic lab │
+│ ┌─────┬─────┐ │ leaderboard    │ alert dropdown   │ per-class count│
+│ │ pie │ sev │ │ + timeline     │ SHAP top-5 bars  │ Inject button  │
+│ ├─────┴─────┤ │                │ + alert details  │ + inject log   │
+│ │ live feed │ │                │                  │                │
+│ └───────────┘ │                │                  │                │
+└───────────────┴────────────────┴──────────────────┴────────────────┘
+```
+
+- **KPI strip** — markdown table (`kpi_markdown`): flows / attacks / benign / uptime, refreshed with every poll.
+- **📊 Dashboard** — attack-type pie (`attack_pie_fig`), severity bars (`severity_bar_fig`), live alert feed dataframe (`feed_dataframe`, 3 s poll — the WebSocket-equivalent).
+- **🕵 Threat intel** — attacker leaderboard + attack timeline (last 500 alerts, hourly buckets, real counts only).
+- **🧠 Explain** — dropdown of last 50 alerts → signed SHAP top-5 bar chart (`explain_alert`), the `/explain` page equivalent.
+- **🧪 Traffic lab** — per-class flow-count slider → `inject_traffic()` replays balanced CSV rows through `/api/predict`.
+- **🖼 Step 4** — static dashboard PNGs (`dashboard_attacks_by_type.png`, `dashboard_attacks_by_severity.png`, `dashboard_timeline.png`) exported to `nids_artifacts/` for the report.
+- **Severity colors** — CRITICAL `#dc2626`, HIGH `#ea580c`, MEDIUM `#d97706`, LOW `#2563eb`, NONE `#6b7280`.
+- **Launch** — `demo.launch(share=True)` → public `*.gradio.live` URL; auto-refresh via `demo.load(..., every=3)`.
+
+### 3.1 Original React PageShell (historical, 🟠 LOCAL-ONLY)
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -187,14 +214,14 @@ main.tsx
 
 ## 6. Interaction & Behavioral Notes
 
-1. **WS lifecycle:** first connect fetches last-50 history; subsequent pushes append; `isConnected` drives StatusBar; auto-reconnect (≈3 s delay) after drops.
+1. **WS lifecycle:** first connect fetches last-50 history; subsequent pushes append; `isConnected` drives StatusBar; auto-reconnect (≈3 s delay) after drops; when `VITE_NIDS_API_KEY` is configured the hook appends `?token=` and **stops reconnecting on a 4401 auth rejection**.
 2. **Offline resilience:** axios interceptor logs `[API] Backend offline` when no response; widgets keep last data; chat shows error bubble.
 3. **Empty states:** Explainability / AlertFeed / AttackTimeline / Network Activity show explicit waiting or empty copy — designed, not broken.
 4. **Accessibility:** shadcn/ui primitives (dialog, tooltip, toast) ship ARIA; custom widgets (timeline, FAB) rely on native buttons/labels.
 5. **Responsive:** dashboard grids collapse from 12-col → stacked below `lg`; sidebar becomes overlay-hidden under `lg`.
 
 ## 7. Known Design Caveats
-- ⚠️ Live topology graph (node/edge layout of aggregated flows) remains ⚪ FUTURE — `/network` shows aggregated tables, not a graph.
-- ⚠️ Playwright installed but no E2E specs yet (unit coverage via vitest).
-- ⚠️ `.light-mode` CSS rules exist but are no longer wired to any toggle.
-- ✅ Resolved this pass: AttackTimeline synthetic noise (ISSUE-04), placeholder CSV export (ISSUE-03), non-functional Settings placeholder, chat XSS surface, chart-only "Network Map" tab.
+- ✅ **Colab edition:** the React app (§3.1, §4) is 🟠 LOCAL-ONLY (removed with `nids-frontend/`); notebook 04's Gradio app (§3.1b) delivers the same views over the same API with 3 s polling in place of WebSocket push.
+- ⚠️ Gradio figures are generated on the fly with matplotlib — no per-class AUC/ROC panels in the dashboard itself (those live in notebook 02); the Explain tab reuses the same SHAP top-5 payload the API returns.
+- ⚠️ `.light-mode` CSS rules (original React) are obsolete with the removed frontend.
+- ✅ Resolved this pass: AttackTimeline synthetic noise (ISSUE-04), placeholder CSV export (ISSUE-03), chat XSS surface (all HTML escaped before markdown rendering).
